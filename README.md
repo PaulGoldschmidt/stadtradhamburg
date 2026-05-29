@@ -33,3 +33,65 @@ ds.dataset("data/observations", partitioning="hive").to_table()
 
 The **first** run only seeds cursors — it intentionally writes no observations,
 so the dataset only contains data from the moment the poller started.
+
+## Alternative source: GBFS via Deutsche Bahn
+
+The Hamburg SensorThings feed has been silent since 2026-03-31. As a fallback,
+`scripts/gbfs_poller.py` polls the same StadtRad data via Deutsche Bahn's
+Shared-Mobility GBFS API (`apis.deutschebahn.com`). It writes to a separate
+`data/gbfs/` tree:
+
+```
+data/gbfs/
+  stations.parquet                                     # station metadata (daily refresh)
+  observations/date=YYYY-MM-DD/part-*.parquet          # per-station status (bikes/docks available)
+  bikes/date=YYYY-MM-DD/part-*.parquet                 # per-bike snapshot, every cycle
+  state.json                                           # per-station last_reported cursor
+```
+
+Credentials are loaded from `.env` at the repo root (keys `clientid` and
+`clientsecret` — both required). Usage is otherwise identical:
+
+```sh
+python scripts/gbfs_poller.py --once       # smoke test
+python scripts/gbfs_poller.py              # daemon
+```
+
+GBFS returns only the *current* snapshot; there is no historical backlog, so a
+missed cycle is data lost. Run as a service for continuous coverage — see
+`deploy/gbfs-poller.service`.
+
+### Inferring rentals from `bikes/`
+
+Each row in `bikes/` is one visible bike in one poll cycle, keyed by the stable
+`bike_number` (e.g. `"30277"` — the number printed on the frame). A bike that
+is currently being ridden is *absent* from the snapshot; it reappears at the
+destination once parked. The diff between consecutive snapshots therefore
+yields rentals: bike X last seen at station A at T1, first seen at station B at
+T2 → one rental from A to B between T1 and T2.
+
+DuckDB starter (run once a few hours of data have accumulated):
+
+```python
+import duckdb
+con = duckdb.connect()
+con.execute("CREATE VIEW b AS SELECT * FROM 'data/gbfs/bikes/date=*/part-*.parquet'")
+con.execute("""
+  WITH ordered AS (
+    SELECT bike_number, station_id, observed_at,
+           LAG(station_id)  OVER w AS prev_station,
+           LAG(observed_at) OVER w AS prev_seen
+    FROM b WHERE station_id IS NOT NULL
+    WINDOW w AS (PARTITION BY bike_number ORDER BY observed_at)
+  )
+  SELECT bike_number, prev_station AS origin, station_id AS destination,
+         prev_seen AS departed_after, observed_at AS arrived_by
+  FROM ordered
+  WHERE prev_station IS NOT NULL AND prev_station <> station_id
+  ORDER BY arrived_by
+""").df().head()
+```
+
+Trip endpoints are bounded by the poll interval (±5 min by default), so
+duration estimates are coarse. Sub-5-minute trips and return-to-same-station
+trips are invisible.
