@@ -180,3 +180,8 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 /data
+
+# Analysis artifacts (reproducible from analysis/trips.ipynb)
+analysis/out/*.png
+analysis/out/*.html
+

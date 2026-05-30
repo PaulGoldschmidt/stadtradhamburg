@@ -95,3 +95,6 @@ con.execute("""
 Trip endpoints are bounded by the poll interval (±5 min by default), so
 duration estimates are coarse. Sub-5-minute trips and return-to-same-station
 trips are invisible.
+
+See `analysis/trips.ipynb` for an end-to-end trip-inference and visualization
+pipeline (timeseries, top stations, duration histogram, interactive OD map).
