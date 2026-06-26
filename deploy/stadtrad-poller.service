@@ -1,0 +1,33 @@
+[Unit]
+Description=StadtRad Hamburg SensorThings poller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stadtrad
+Group=stadtrad
+WorkingDirectory=/home/stadtrad/stadtradhamburg
+ExecStart=/home/stadtrad/venv/bin/python scripts/stadtrad_poller.py \
+    --data-dir /var/lib/stadtrad/data \
+    --interval 300 \
+    --log-level INFO
+
+Restart=on-failure
+RestartSec=30s
+TimeoutStopSec=60s
+KillSignal=SIGTERM
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stadtrad
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/var/lib/stadtrad
+
+[Install]
+WantedBy=multi-user.target
