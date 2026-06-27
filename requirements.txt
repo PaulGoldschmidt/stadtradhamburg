@@ -8,3 +8,6 @@ pandas>=2.0
 matplotlib>=3.8
 folium>=0.15
 jupyter>=1.0
+contextily>=1.5
+polyline>=2.0
+tqdm>=4.66

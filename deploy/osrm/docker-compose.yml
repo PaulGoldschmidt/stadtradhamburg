@@ -1,0 +1,16 @@
+services:
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    container_name: stadtrad-osrm
+    restart: unless-stopped
+    ports:
+      # 5000 is macOS AirPlay Receiver by default; use 5050 host-side.
+      - "5050:5000"
+    volumes:
+      - ../../data/osrm:/data
+    command: >
+      osrm-routed
+      --algorithm mld
+      --max-matching-size 500
+      --max-viaroute-size 500
+      /data/hamburg-latest.osrm

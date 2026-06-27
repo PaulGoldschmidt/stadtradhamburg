@@ -156,8 +156,8 @@ bike_number                              origin_name                            
 ### Most rented (top 10)
 
 bike_number  trips  total_km  avg_km  avg_min
-      34106    137    260.70    1.90    20.60
       30046    137    276.35    2.02    19.90
+      34106    137    260.70    1.90    20.60
       35294    134    290.49    2.17    22.80
       34534    132    279.25    2.12    20.20
       35114    131    255.11    1.95    19.90
@@ -165,7 +165,7 @@ bike_number  trips  total_km  avg_km  avg_min
       32025    128    261.37    2.04    19.90
       34532    128    310.85    2.43    22.10
       35320    127    297.00    2.34    23.60
-      35474    125    279.22    2.23    23.70
+      30447    125    248.83    1.99    19.50
 
 ### Most distance covered (top 10, sum of straight-line trip km)
 

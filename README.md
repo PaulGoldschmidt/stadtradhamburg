@@ -97,4 +97,37 @@ duration estimates are coarse. Sub-5-minute trips and return-to-same-station
 trips are invisible.
 
 See `analysis/trips.ipynb` for an end-to-end trip-inference and visualization
-pipeline (timeseries, top stations, duration histogram, interactive OD map).
+pipeline (timeseries, top stations, duration histogram, interactive OD map),
+and `analysis/stats.py` for extended descriptive statistics (outliers, net
+flow, occupancy).
+
+## Rendering a trips clip
+
+`analysis/clip.py` produces a dark-theme MP4 of trips flowing across Hamburg,
+with road-following routes provided by a local OSRM service. One-time setup:
+
+```sh
+brew install ffmpeg                                 # macOS; otherwise apt/dnf
+bash deploy/osrm/setup.sh                           # builds the OSRM graph
+docker compose -f deploy/osrm/docker-compose.yml up -d
+```
+
+Then:
+
+```sh
+# Warm the per-OD-pair route cache (re-runs are no-ops)
+python analysis/clip.py --day 2026-06-23 --routes-only
+
+# Render one day, 1 sec = 5 min real
+python analysis/clip.py --day 2026-06-23
+
+# Render a single evening peak (quick smoke test)
+python analysis/clip.py --day 2026-06-23 --start-hour 17 --end-hour 18 \
+  --time-scale 60 --fps 30
+
+# Full 29-day hyperlapse, 1 sec = 1 h real
+python analysis/clip.py --start 2026-05-29 --end 2026-06-26 --time-scale 3600
+```
+
+Output goes to `analysis/out/clip_<window>.mp4`. The route cache
+(`analysis/out/routes.parquet`) and OSM extract (`data/osrm/`) are gitignored.
