@@ -57,13 +57,19 @@ def build_panel(
     data_dir: Path,
     step_min: int,
     outage_cap_hours: int,
+    lookback_hours: int | None = None,
 ) -> None:
     """Resample observations onto a regular `step_min` grid per station.
 
     The poller writes only state *changes*, so the raw series is irregular. We
     build a dense (station × time) grid and ASOF-join the last-known state onto
     each slot (forward-fill). Slots whose newest obs is older than the outage
-    cap are nulled — we don't fill bikes across a multi-hour data gap."""
+    cap are nulled — we don't fill bikes across a multi-hour data gap.
+
+    `lookback_hours` bounds the grid to the most recent window (serving only needs
+    the latest slot per station, so a small window keeps memory/CPU flat as history
+    grows). `None` = full history (training). The ASOF fill still reads all obs, so
+    forward-fill into the window start is correct."""
     obs_glob = data_dir / "observations" / "date=*" / "part-*.parquet"
     con.execute(f"CREATE OR REPLACE VIEW obs_raw AS SELECT * FROM '{obs_glob}'")
 
@@ -81,6 +87,10 @@ def build_panel(
     )
 
     # Regular time grid, snapped to the step. generate_series is inclusive.
+    start_expr = "(SELECT t0 FROM bounds)"
+    if lookback_hours is not None:
+        start_expr = (f"GREATEST((SELECT t0 FROM bounds), "
+                      f"(SELECT t1 FROM bounds) - INTERVAL {int(lookback_hours)} HOUR)")
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE grid AS
@@ -93,7 +103,7 @@ def build_panel(
         FROM (SELECT DISTINCT station_id FROM cap) s
         CROSS JOIN (
           SELECT unnest(generate_series(
-                   (SELECT t0 FROM bounds),
+                   {start_expr},
                    (SELECT t1 FROM bounds),
                    INTERVAL {step_min} MINUTE)) AS t
         ) g
@@ -290,10 +300,14 @@ def load_bundle(path: Path) -> dict:
     return joblib.load(path)
 
 
-def predict_live(data_dir: Path, horizons: list[int], top_n: int, make_map: bool = True) -> int:
+def predict_live(data_dir: Path, horizons: list[int], top_n: int,
+                 make_map: bool = True, lookback_hours: int = 48) -> int:
     """Serving: forecast every station at one or more horizons from the most
     recent data, using FORECAST weather for the target hours. Writes a
-    LONG-format forecast_live.parquet — one row per (station, horizon)."""
+    LONG-format forecast_live.parquet — one row per (station, horizon).
+
+    Only the latest slot per station is used, so the panel is bounded to the last
+    `lookback_hours` — bounding memory/CPU regardless of how much history exists."""
     horizons = sorted(set(horizons))
     bundles = {h: load_bundle(default_model_path(h)) for h in horizons}  # fail early if missing
     base_cfg = bundles[horizons[0]]["config"]
@@ -306,8 +320,8 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int, make_map: bool
         f"CREATE OR REPLACE VIEW stations AS SELECT * FROM '{data_dir / 'stations.parquet'}'"
     )
 
-    print("building panel from current data…")
-    build_panel(con, data_dir, step_min, outage)
+    print(f"building panel from current data (last {lookback_hours}h)…")
+    build_panel(con, data_dir, step_min, outage, lookback_hours=lookback_hours)
     now_ts = pd.Timestamp(con.execute("SELECT max(t) FROM panel").fetchone()[0])
     max_target = now_ts + pd.Timedelta(minutes=max(horizons))
     print(f"latest slot {now_ts}; forecasting up to {max_target}")
@@ -466,6 +480,9 @@ def main(argv: list[str] | None = None) -> int:
                         "Each needs a bundle trained with --save-model --horizon-min H.")
     p.add_argument("--top-n", type=int, default=20, help="Rows in the --predict risk table.")
     p.add_argument("--no-map", action="store_true", help="Skip the HTML map in --predict.")
+    p.add_argument("--lookback-hours", type=int, default=48,
+                   help="--predict: bound the panel to the last N hours (default 48). "
+                        "Keeps serving memory/CPU flat as history grows.")
     args = p.parse_args(argv)
 
     if args.horizon_min % args.step_min:
@@ -475,7 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     data_dir = data_root()
     if args.predict:
         horizons = args.horizons or [args.horizon_min]
-        return predict_live(data_dir, horizons, args.top_n, make_map=not args.no_map)
+        return predict_live(data_dir, horizons, args.top_n,
+                            make_map=not args.no_map, lookback_hours=args.lookback_hours)
 
     use_weather = not args.no_weather and weather_path(data_dir).exists()
     if not args.no_weather and not use_weather:

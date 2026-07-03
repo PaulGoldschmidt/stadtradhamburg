@@ -43,17 +43,16 @@
 
     <section id="unavailable" class="card-lg" style="display:none">
       <h2>Forecast unavailable</h2>
-      <p>No forecast has been generated yet. Run the forecast pipeline
-        (<code>analysis/forecast.py --predict --horizons 30 60 90 120</code>) to populate it.</p>
+      <p>This is not your fault, the server currently has no forecast data available.</p>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="wrap">
-      <p>Forecasts are model estimates (LightGBM over recent flow, time-of-day, and weather), not guarantees.
-         Data: <a href="https://data.deutschebahn.com/">Deutsche&nbsp;Bahn</a> GBFS ·
-         weather <a href="https://brightsky.dev/">Bright&nbsp;Sky</a> / DWD ·
-         map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © <a href="https://carto.com/attributions">CARTO</a>.</p>
+      <p>Forecasts are model estimates, not guarantees.
+         Data: <a href="https://data.deutschebahn.com/">Deutsche&nbsp;Bahn</a> GBFS /
+         weather <a href="https://brightsky.dev/">Bright&nbsp;Sky</a> / DWD /
+         map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © <a href="https://carto.com/attributions">CARTO</a>. A project by <a href="https://github.com/paulgoldschmidt">Paul Goldschmidt</a>.</p>
     </div>
   </footer>
 
