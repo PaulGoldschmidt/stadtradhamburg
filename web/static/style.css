@@ -43,7 +43,16 @@ small { color: var(--muted); font-weight: 400; font-size: .72em; margin-left: .4
 
 /* origin → destination routes list */
 .od-table { display: flex; flex-direction: column; gap: 4px; }
-.od-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.od-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; position: relative; }
+.od-row[data-tip] { cursor: default; }
+.od-row[data-tip]:hover { border-color: var(--accent); }
+.od-row[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute; left: 10px; right: 10px; top: calc(100% + 4px);
+  background: var(--ink); color: #fff; font-size: 12px; font-weight: 500; line-height: 1.35;
+  padding: 7px 10px; border-radius: 8px; z-index: 30; white-space: normal;
+  box-shadow: 0 6px 20px rgba(16,24,40,.28);
+}
 .od-route { font-size: 13px; }
 .od-arrow { color: var(--accent); font-weight: 700; margin: 0 2px; }
 .od-trips { font-weight: 650; white-space: nowrap; }

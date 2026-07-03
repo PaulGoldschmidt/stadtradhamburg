@@ -390,8 +390,21 @@ def bike_usage() -> dict:
     changed station), where they've sat and for how long."""
     most = records(db.query_df(
         """
-        SELECT bike_number, count(*) AS trips, round(sum(distance_km), 1) AS km
-        FROM trips_geo GROUP BY 1 ORDER BY trips DESC, km DESC LIMIT 5
+        WITH top AS (
+          SELECT bike_number, count(*) AS trips, round(sum(distance_km), 1) AS km
+          FROM trips_geo GROUP BY 1 ORDER BY trips DESC, km DESC LIMIT 5
+        ),
+        lastpos AS (   -- last station each of those bikes was parked at
+          SELECT bike_number, arg_max(station_id, observed_at) AS station_id
+          FROM bikes
+          WHERE station_id IS NOT NULL AND bike_number IN (SELECT bike_number FROM top)
+          GROUP BY 1
+        )
+        SELECT t.bike_number, t.trips, t.km, s.name AS last_station
+        FROM top t
+        LEFT JOIN lastpos lp USING (bike_number)
+        LEFT JOIN stations s ON s.station_id = lp.station_id
+        ORDER BY t.trips DESC, t.km DESC
         """
     ))
     sx, sp = "", []

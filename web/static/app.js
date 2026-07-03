@@ -155,11 +155,14 @@ function renderNever(sel, rows) {
 }
 
 function renderBikes(sel, rows) {
-  $(sel).innerHTML = (rows || []).map((r) => `
-    <div class="od-row">
+  $(sel).innerHTML = (rows || []).map((r) => {
+    const tip = r.last_station ? ` data-tip="Last seen at ${String(r.last_station).replace(/"/g, "&quot;")}"` : "";
+    return `
+    <div class="od-row"${tip}>
       <span class="od-route">Bike <b>${r.bike_number}</b></span>
       <span class="od-trips">${fmt(r.trips)}<small> ${r.trips === 1 ? "trip" : "trips"} · ${fmt(r.km)} km</small></span>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function renderForgotten(sel, rows) {
