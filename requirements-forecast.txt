@@ -1,0 +1,4 @@
+# Extra deps for the in-container forecast service (analysis/forecast.py --predict).
+# The web + poller services don't need these, but they share one image.
+lightgbm>=4.0
+scikit-learn>=1.3

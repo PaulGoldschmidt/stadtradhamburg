@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -362,7 +363,10 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int, make_map: bool
     result = pd.concat(frames, ignore_index=True)
     OUT.mkdir(parents=True, exist_ok=True)
     out_parq = OUT / "forecast_live.parquet"
-    result.to_parquet(out_parq, index=False)
+    # Atomic write: a reader (the web container) must never see a half-written file.
+    tmp = out_parq.with_suffix(".parquet.tmp")
+    result.to_parquet(tmp, index=False)
+    os.replace(tmp, out_parq)
     print(f"\nforecast: {result['station_id'].nunique()} stations × {len(horizons)} horizons "
           f"→ {out_parq.relative_to(REPO)}")
 

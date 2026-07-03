@@ -10,13 +10,15 @@ docker compose -f deploy/web/docker-compose.yml up --build -d
 # → http://127.0.0.1:9507/   (API docs at /docs; front with a reverse proxy for TLS)
 ```
 
-The stack has two services sharing one image and one `data/` store:
+The stack has three services sharing one image:
 
 - **web** — reads `data/` and `analysis/out/` **read-only** and serves the site.
   Degrades gracefully if `forecast_live.parquet` is absent (map colours by
   current occupancy instead of forecast risk).
 - **poller** — writes `data/` **read-write**: polls Deutsche Bahn GBFS every
   5 min and appends new observations/bikes, so the site auto-updates.
+- **forecast** — writes `analysis/out/` **read-write**: every 5 min regenerates
+  `forecast_live.parquet` (the `/forecast` page's report) from the latest data.
 
 ## Live ingestion (poller)
 
@@ -37,6 +39,23 @@ cursor it only writes new data), continuing your existing history. Two caveats:
 
 Web only (no ingestion): `docker compose ... up -d web`.
 Poller logs: `docker compose -f deploy/web/docker-compose.yml logs -f poller`.
+
+## Live forecast (forecast service)
+
+The `forecast` service reruns `analysis/forecast.py --predict --horizons "$HORIZONS"`
+every `FORECAST_INTERVAL` seconds and writes `analysis/out/forecast_live.parquet`,
+which the web app picks up automatically (within its refresh window). It loads the
+per-horizon model bundles, so before starting it:
+
+- **Transfer the trained bundles** `forecast_model_h{30,60,90,120}.joblib` into the
+  host `analysis/out/` (they're gitignored; train with
+  `for h in 30 60 90 120; do .venv/bin/python analysis/forecast.py --save-model --horizon-min $h; done`).
+- Make `analysis/out/` **writable by the container uid** — same as `data/`:
+  `sudo chown -R 1000:1000 analysis/out data`.
+
+To retrain the models (not just re-predict), do it off-box and re-transfer the
+bundles — the loop only *predicts*. Forecast logs:
+`docker compose -f deploy/web/docker-compose.yml logs -f forecast`.
 
 ## Local dev (no Docker)
 

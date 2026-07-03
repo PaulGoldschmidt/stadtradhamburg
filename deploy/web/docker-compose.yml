@@ -46,3 +46,26 @@ services:
     cpus: 0.5
     mem_limit: 256m
     stop_grace_period: 60s           # poller drains its current cycle on SIGTERM
+
+  # Forecast: every 5 min, regenerate analysis/out/forecast_live.parquet (the
+  # report the web app's /forecast page reads) from the latest data. Reuses the
+  # web image. Loads the per-horizon model bundles (forecast_model_h*.joblib),
+  # which are gitignored — transfer them into analysis/out/ once.
+  forecast:
+    image: stadtrad-web              # same image (has lightgbm/scikit-learn baked in)
+    container_name: stadtrad-forecast
+    depends_on:
+      - web
+    command: ["bash", "deploy/forecast-loop.sh"]
+    volumes:
+      - ../../data:/app/data         # read-write: weather top-up writes here
+      - ../../analysis/out:/app/analysis/out   # read-write: writes forecast_live.parquet
+    environment:
+      DATA_DIR: /app/data
+      FORECAST_INTERVAL: "300"       # seconds between forecast regenerations
+      HORIZONS: "30 60 90 120"       # a model bundle must exist for each
+      DUCKDB_THREADS: "2"
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 1g                    # panel build + 4 LightGBM models
+    stop_grace_period: 20s
