@@ -11,6 +11,7 @@ async function loadCards() {
     ["Distance ridden", `${fmt(s.km)}<small> km</small>`],
     ["Bikes in use", fmt(s.bikes_in_use)],
     ["Bikes moved", fmt(s.bikes_moved)],
+    ["Longest ride", `${fmt(s.longest_km)}<small> km</small>`],
     ["Empty now", fmt(s.stations_empty_now)],
     ["Avg trip", `${fmt(s.avg_min)}<small> min</small>`],
   ];
@@ -111,6 +112,14 @@ async function loadHistory() {
     $("#od-least-note").textContent = `${fmt(top.od_once)} of ${fmt(top.od_distinct)} routes ridden only once`;
   }
 
+  const bikes = await api("/api/history/bikes");
+  renderBikes("#bikes-most", bikes.most);
+  renderBikes("#bikes-least", bikes.least);
+  if (bikes.fleet_total) {
+    $("#bikes-least-note").textContent =
+      `${fmt(bikes.never_moved)} of ${fmt(bikes.fleet_total)} bikes never changed station`;
+  }
+
   renderHeatmap(await api("/api/history/heatmap"));
 }
 
@@ -119,6 +128,14 @@ function renderOD(sel, rows) {
     <div class="od-row">
       <span class="od-route">${r.origin} <span class="od-arrow">→</span> ${r.destination}</span>
       <span class="od-trips">${fmt(r.trips)}<small> ${r.trips === 1 ? "trip" : "trips"}</small></span>
+    </div>`).join("");
+}
+
+function renderBikes(sel, rows) {
+  $(sel).innerHTML = (rows || []).map((r) => `
+    <div class="od-row">
+      <span class="od-route">Bike <b>${r.bike_number}</b></span>
+      <span class="od-trips">${fmt(r.trips)}<small> ${r.trips === 1 ? "trip" : "trips"} · ${fmt(r.km)} km</small></span>
     </div>`).join("");
 }
 

@@ -114,6 +114,12 @@ async def top_stations(request: Request):
     return await run_in_threadpool(queries.top_stations)
 
 
+@app.get("/api/history/bikes", tags=["history"])
+@limiter.limit(settings.RATE_HISTORY)
+async def bike_usage(request: Request):
+    return await run_in_threadpool(queries.bike_usage)
+
+
 @app.get("/api/weather/ridership", tags=["history"])
 @limiter.limit(settings.RATE_HISTORY)
 async def weather_ridership(request: Request):

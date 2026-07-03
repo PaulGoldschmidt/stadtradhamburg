@@ -125,11 +125,29 @@ def stats_today() -> dict:
         """,
         xparams,
     ))
+    # Longest actual ride today (by straight-line km). Drop implausible speeds
+    # (>30 km/h) so a rebalancing truck-move can't pose as the day's longest ride.
+    names = settings.EXCLUDE_STATIONS
+    odw, odp = "", []
+    if names:
+        ph = ", ".join(["?"] * len(names))
+        odw = f"AND origin_name NOT IN ({ph}) AND dest_name NOT IN ({ph})"
+        odp = list(names) * 2
+    longest = _one(db.query_df(
+        f"""
+        SELECT round(max(distance_km), 1) AS longest_km
+        FROM trips_geo
+        WHERE CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE) = DATE '{day}'
+          AND duration_min > 0 AND distance_km / (duration_min / 60.0) <= 30 {odw}
+        """,
+        odp,
+    ))
     bikes_in_use = max(int(fleet.get("fleet_recent") or 0) - int(fleet.get("visible_now") or 0), 0)
     return {
         "day": day,
         **trips,
         "bikes_in_use": bikes_in_use,
+        "longest_km": longest.get("longest_km"),
         **stations,
         "busiest_station": busiest.get("busiest_station"),
     }
@@ -310,6 +328,30 @@ def top_stations() -> dict:
             "od_most": od("DESC", "origin_name, dest_name"),
             "od_least": od("ASC", "hash(origin_name || '|' || dest_name)"),  # varied one-off sample
             "od_distinct": summary.get("distinct_pairs"), "od_once": summary.get("once_only")}
+
+
+@ttl_cache(settings.TTL_HISTORY)
+def bike_usage() -> dict:
+    """Most- and least-ridden individual bikes (by the number printed on the frame),
+    plus how many of the fleet never changed station."""
+    def by(order: str, tiebreak: str) -> list[dict]:
+        return records(db.query_df(
+            f"""
+            SELECT bike_number, count(*) AS trips,
+                   round(sum(distance_km), 1) AS km
+            FROM trips_geo GROUP BY 1 ORDER BY trips {order}, {tiebreak} LIMIT 5
+            """
+        ))
+    fleet = _one(db.query_df(
+        """
+        SELECT (SELECT count(DISTINCT bike_number) FROM bikes)     AS fleet_total,
+               (SELECT count(DISTINCT bike_number) FROM trips_geo) AS moved
+        """
+    ))
+    ft, mv = int(fleet.get("fleet_total") or 0), int(fleet.get("moved") or 0)
+    return {"most": by("DESC", "km DESC"),
+            "least": by("ASC", "hash(bike_number)"),   # varied sample of barely-ridden bikes
+            "fleet_total": ft, "moved": mv, "never_moved": max(ft - mv, 0)}
 
 
 # ---------- weather -------------------------------------------------------------
