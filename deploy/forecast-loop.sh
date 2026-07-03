@@ -16,6 +16,6 @@ HORIZONS="${HORIZONS:-30 60 90 120}"
 echo "forecast-loop: every ${INTERVAL}s, horizons: ${HORIZONS}"
 while true; do
   python analysis/weather.py --log-level WARNING || echo "forecast-loop: weather refresh failed"
-  python analysis/forecast.py --predict --horizons $HORIZONS --no-map || echo "forecast-loop: predict failed"
+  python analysis/forecast.py --predict --horizons $HORIZONS --no-map --quiet || echo "forecast-loop: predict failed"
   sleep "$INTERVAL"
 done

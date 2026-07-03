@@ -301,30 +301,33 @@ def load_bundle(path: Path) -> dict:
 
 
 def predict_live(data_dir: Path, horizons: list[int], top_n: int,
-                 make_map: bool = True, lookback_hours: int = 48) -> int:
+                 make_map: bool = True, lookback_hours: int = 48, quiet: bool = False) -> int:
     """Serving: forecast every station at one or more horizons from the most
     recent data, using FORECAST weather for the target hours. Writes a
     LONG-format forecast_live.parquet — one row per (station, horizon).
 
     Only the latest slot per station is used, so the panel is bounded to the last
-    `lookback_hours` — bounding memory/CPU regardless of how much history exists."""
+    `lookback_hours` — bounding memory/CPU regardless of how much history exists.
+    `quiet` suppresses the step-by-step + risk-table output (for the 5-min loop),
+    emitting just a one-line completion summary."""
+    log = (lambda *a, **k: None) if quiet else print
     horizons = sorted(set(horizons))
     bundles = {h: load_bundle(default_model_path(h)) for h in horizons}  # fail early if missing
     base_cfg = bundles[horizons[0]]["config"]
     step_min, outage = base_cfg["step_min"], base_cfg["outage_cap_hours"]
     use_weather = any(b["config"]["use_weather"] for b in bundles.values())
-    print(f"loaded {len(bundles)} bundle(s) for horizons {horizons} min")
+    log(f"loaded {len(bundles)} bundle(s) for horizons {horizons} min")
 
     con = duckdb.connect()
     con.execute(
         f"CREATE OR REPLACE VIEW stations AS SELECT * FROM '{data_dir / 'stations.parquet'}'"
     )
 
-    print(f"building panel from current data (last {lookback_hours}h)…")
+    log(f"building panel from current data (last {lookback_hours}h)…")
     build_panel(con, data_dir, step_min, outage, lookback_hours=lookback_hours)
     now_ts = pd.Timestamp(con.execute("SELECT max(t) FROM panel").fetchone()[0])
     max_target = now_ts + pd.Timedelta(minutes=max(horizons))
-    print(f"latest slot {now_ts}; forecasting up to {max_target}")
+    log(f"latest slot {now_ts}; forecasting up to {max_target}")
 
     wstatus = "off"
     if use_weather:
@@ -344,7 +347,7 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
             "SELECT max(timestamp), COALESCE(sum(is_forecast::INT), 0) FROM weather"
         ).fetchone()
         wstatus = f"store through {wmax}, {int(wfc)} forecast hours"
-    print(f"weather: {wstatus}")
+    log(f"weather: {wstatus}")
 
     use_w = use_weather and weather_path(data_dir).exists()
     meta = con.execute("SELECT station_id, name, lat, lon FROM stations").df()
@@ -372,7 +375,7 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
               "bikes", "capacity", "pred_bikes", "p_empty"]]
             .rename(columns={"bikes": "bikes_now"})
         )
-        print(f"  +{h:>3} min: {len(live)} stations, mean P(empty)={live['p_empty'].mean():.3f}")
+        log(f"  +{h:>3} min: {len(live)} stations, mean P(empty)={live['p_empty'].mean():.3f}")
 
     result = pd.concat(frames, ignore_index=True)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -381,8 +384,8 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
     tmp = out_parq.with_suffix(".parquet.tmp")
     result.to_parquet(tmp, index=False)
     os.replace(tmp, out_parq)
-    print(f"\nforecast: {result['station_id'].nunique()} stations × {len(horizons)} horizons "
-          f"→ {out_parq.relative_to(REPO)}")
+    log(f"\nforecast: {result['station_id'].nunique()} stations × {len(horizons)} horizons "
+        f"→ {out_parq.relative_to(REPO)}")
 
     # Primary horizon drives the standalone folium map + the md/console summary.
     primary = 60 if 60 in horizons else horizons[0]
@@ -405,10 +408,14 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
     if make_map:
         map_html = SITE / "index.html"
         build_forecast_map(prim, map_html, horizon_min=primary, now_ts=now_ts, target_ts=ptarget)
-        print(f"map  → {map_html.relative_to(REPO)}")
+        log(f"map  → {map_html.relative_to(REPO)}")
 
-    print(f"\ntop {min(top_n, len(prim))} stockout risks at +{primary} min:")
-    print(prim.drop(columns=["lat", "lon"]).head(top_n).to_string(index=False))
+    if quiet:
+        print(f"prediction completed: {result['station_id'].nunique()} stations "
+              f"× {len(horizons)} horizons")
+    else:
+        print(f"\ntop {min(top_n, len(prim))} stockout risks at +{primary} min:")
+        print(prim.drop(columns=["lat", "lon"]).head(top_n).to_string(index=False))
     return 0
 
 
@@ -483,6 +490,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--lookback-hours", type=int, default=48,
                    help="--predict: bound the panel to the last N hours (default 48). "
                         "Keeps serving memory/CPU flat as history grows.")
+    p.add_argument("--quiet", action="store_true",
+                   help="--predict: suppress step/table output, print only a completion line "
+                        "(for the 5-min loop, to avoid log spam).")
     args = p.parse_args(argv)
 
     if args.horizon_min % args.step_min:
@@ -493,7 +503,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.predict:
         horizons = args.horizons or [args.horizon_min]
         return predict_live(data_dir, horizons, args.top_n,
-                            make_map=not args.no_map, lookback_hours=args.lookback_hours)
+                            make_map=not args.no_map, lookback_hours=args.lookback_hours,
+                            quiet=args.quiet)
 
     use_weather = not args.no_weather and weather_path(data_dir).exists()
     if not args.no_weather and not use_weather:
