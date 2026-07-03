@@ -41,6 +41,14 @@ small { color: var(--muted); font-weight: 400; font-size: .72em; margin-left: .4
 .pill:hover { border-color: var(--accent); }
 .pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+/* origin → destination routes list */
+.od-table { display: flex; flex-direction: column; gap: 4px; }
+.od-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.od-route { font-size: 13px; }
+.od-arrow { color: var(--accent); font-weight: 700; margin: 0 2px; }
+.od-trips { font-weight: 650; white-space: nowrap; }
+.od-trips small { color: var(--muted); font-weight: 400; }
+
 /* forecast risk list */
 .risk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
 .risk-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }

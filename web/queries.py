@@ -263,25 +263,51 @@ def heatmap() -> dict:
 
 @ttl_cache(settings.TTL_HISTORY)
 def top_stations() -> dict:
+    sx, sp = _exclude("s")
     busiest = records(db.query_df(
-        """
+        f"""
         WITH flow AS (
           SELECT origin_id AS sid FROM trips_geo
           UNION ALL SELECT destination_id FROM trips_geo
         )
         SELECT s.name, count(*) AS moves
         FROM flow JOIN stations s ON s.station_id = flow.sid
+        WHERE TRUE{sx}
         GROUP BY 1 ORDER BY moves DESC LIMIT 12
-        """
+        """,
+        sp,
     ))
-    od = records(db.query_df(
-        """
-        SELECT origin_name AS origin, dest_name AS destination, count(*) AS trips,
-               round(avg(distance_km), 2) AS avg_km
-        FROM trips_geo GROUP BY 1, 2 ORDER BY trips DESC LIMIT 12
-        """
+
+    # Origin→destination pairs, with excluded stations (depots) dropped from both ends.
+    names = settings.EXCLUDE_STATIONS
+    if names:
+        ph = ", ".join(["?"] * len(names))
+        od_where = f"WHERE origin_name NOT IN ({ph}) AND dest_name NOT IN ({ph})"
+        od_params = list(names) * 2
+    else:
+        od_where, od_params = "", []
+
+    def od(order: str) -> list[dict]:
+        return records(db.query_df(
+            f"""
+            SELECT origin_name AS origin, dest_name AS destination, count(*) AS trips,
+                   round(avg(distance_km), 2) AS avg_km
+            FROM trips_geo {od_where}
+            GROUP BY 1, 2 ORDER BY trips {order}, 1, 2 LIMIT 5
+            """,
+            od_params,
+        ))
+
+    summary = _one(db.query_df(
+        f"""
+        SELECT count(*) AS distinct_pairs, COALESCE(sum((c = 1)::INT), 0) AS once_only FROM (
+          SELECT count(*) AS c FROM trips_geo {od_where} GROUP BY origin_name, dest_name
+        )
+        """,
+        od_params,
     ))
-    return {"stations": busiest, "od_pairs": od}
+    return {"stations": busiest, "od_most": od("DESC"), "od_least": od("ASC"),
+            "od_distinct": summary.get("distinct_pairs"), "od_once": summary.get("once_only")}
 
 
 # ---------- weather -------------------------------------------------------------

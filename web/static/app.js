@@ -105,8 +105,21 @@ async function loadHistory() {
     },
     options: { ...baseOpts(), indexAxis: "y", scales: { x: { beginAtZero: true }, y: { ticks: { font: { size: 11 } } } } },
   });
+  renderOD("#od-most", top.od_most);
+  renderOD("#od-least", top.od_least);
+  if (top.od_distinct != null) {
+    $("#od-least-note").textContent = `${fmt(top.od_once)} of ${fmt(top.od_distinct)} routes ridden only once`;
+  }
 
   renderHeatmap(await api("/api/history/heatmap"));
+}
+
+function renderOD(sel, rows) {
+  $(sel).innerHTML = (rows || []).map((r) => `
+    <div class="od-row">
+      <span class="od-route">${r.origin} <span class="od-arrow">→</span> ${r.destination}</span>
+      <span class="od-trips">${fmt(r.trips)}<small> ${r.trips === 1 ? "trip" : "trips"}</small></span>
+    </div>`).join("");
 }
 
 function renderHeatmap(hm) {
