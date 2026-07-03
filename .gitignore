@@ -184,4 +184,8 @@ analysis/out/*.png
 analysis/out/*.html
 analysis/out/*.mp4
 analysis/out/routes.parquet
+analysis/out/*.joblib
+analysis/out/forecast_live.parquet
+analysis/out/forecast_live.md
+analysis/out/site/
 /data/osrm/

@@ -1,0 +1,11 @@
+# Public website (web/) — slim runtime deps only. No matplotlib/folium/lightgbm/
+# jupyter: the site reads the precomputed forecast_live.parquet, it does not train
+# or render server-side. `requests` is pulled in transitively by analysis/weather.py.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+slowapi>=0.1.9
+duckdb>=0.10
+pyarrow>=15
+pandas>=2.0
+pytz>=2024.1
+requests>=2.31

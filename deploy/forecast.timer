@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the StadtRad utilization forecast every 5 minutes
+
+[Timer]
+# First run shortly after boot, then every 5 min (matches the poller cadence).
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
