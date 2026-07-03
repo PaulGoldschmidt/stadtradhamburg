@@ -7,10 +7,12 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 COPY requirements-web.txt .
 RUN pip install --no-cache-dir -r requirements-web.txt
 
-# App + the reused analysis helpers it imports (_trips, weather). Data and the
-# forecast artifact are bind-mounted read-only at runtime, not baked in.
+# App + the reused analysis helpers it imports (_trips, weather) + the GBFS
+# poller (run as a separate service off this same image). Data and the forecast
+# artifact are bind-mounted at runtime, not baked in.
 COPY web/ web/
 COPY analysis/_trips.py analysis/weather.py analysis/
+COPY scripts/gbfs_poller.py scripts/gbfs_poller.py
 
 RUN useradd --create-home app && chown -R app /app
 USER app
