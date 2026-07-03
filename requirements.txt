@@ -11,3 +11,7 @@ jupyter>=1.0
 contextily>=1.5
 polyline>=2.0
 tqdm>=4.66
+
+# forecasting (analysis/forecast.py)
+lightgbm>=4.0
+scikit-learn>=1.3
