@@ -38,6 +38,16 @@ def latest_day() -> str:
     return str(df["d"].iloc[0])
 
 
+def _exclude(alias: str = "s") -> tuple[str, list]:
+    """SQL predicate + params to drop statically-excluded stations (depots etc.),
+    e.g. ' AND s.name NOT IN (?)'. Empty when nothing is excluded."""
+    names = settings.EXCLUDE_STATIONS
+    if not names:
+        return "", []
+    placeholders = ", ".join(["?"] * len(names))
+    return f" AND {alias}.name NOT IN ({placeholders})", list(names)
+
+
 # ---------- live ----------------------------------------------------------------
 
 @ttl_cache(settings.TTL_LIVE)
@@ -83,8 +93,9 @@ def stats_today() -> dict:
                (SELECT count(*) FROM bikes b, last WHERE b.observed_at = last.t) AS visible_now
         """
     ))
+    xclause, xparams = _exclude("s")
     stations = _one(db.query_df(
-        """
+        f"""
         WITH latest AS (
           SELECT station_id,
                  arg_max(num_bikes_available, last_reported) AS bikes,
@@ -92,11 +103,13 @@ def stats_today() -> dict:
                  arg_max(is_installed, last_reported)        AS installed
           FROM observations GROUP BY 1
         )
-        SELECT sum((bikes = 0 AND installed)::INT) AS stations_empty_now,
-               sum((docks = 0 AND installed)::INT) AS stations_full_now,
-               sum(installed::INT)                 AS stations_online
-        FROM latest
-        """
+        SELECT sum((l.bikes = 0 AND l.installed)::INT) AS stations_empty_now,
+               sum((l.docks = 0 AND l.installed)::INT) AS stations_full_now,
+               sum(l.installed::INT)                   AS stations_online
+        FROM latest l JOIN stations s ON s.station_id = l.station_id
+        WHERE TRUE{xclause}
+        """,
+        xparams,
     ))
     busiest = _one(db.query_df(
         f"""
@@ -107,8 +120,10 @@ def stats_today() -> dict:
         flow AS (SELECT origin_id AS sid FROM t UNION ALL SELECT destination_id FROM t)
         SELECT s.name AS busiest_station, count(*) AS moves
         FROM flow JOIN stations s ON s.station_id = flow.sid
+        WHERE TRUE{xclause}
         GROUP BY 1 ORDER BY moves DESC LIMIT 1
-        """
+        """,
+        xparams,
     ))
     bikes_in_use = max(int(fleet.get("fleet_recent") or 0) - int(fleet.get("visible_now") or 0), 0)
     return {
@@ -123,8 +138,9 @@ def stats_today() -> dict:
 @ttl_cache(settings.TTL_LIVE)
 def stations_live() -> list[dict]:
     """CURRENT status per station (feeds the main map) — no forecast."""
+    xclause, xparams = _exclude("s")
     df = db.query_df(
-        """
+        f"""
         WITH latest AS (
           SELECT station_id,
                  arg_max(num_bikes_available, last_reported) AS bikes,
@@ -139,8 +155,9 @@ def stations_live() -> list[dict]:
                     THEN round(l.bikes::DOUBLE / (l.bikes + l.docks), 3) END AS occ
         FROM stations s
         JOIN latest l ON l.station_id = s.station_id
-        WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL
-        """
+        WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL{xclause}
+        """,
+        xparams,
     )
     return records(df)
 
@@ -176,6 +193,9 @@ def forecast_at(horizon_min: int) -> dict:
         return {"available": False, "horizon_min": horizon_min, "t_target": None, "stations": []}
     where = "WHERE f.horizon_min = ? AND s.lat IS NOT NULL" if "horizon_min" in cols else "WHERE s.lat IS NOT NULL"
     params = [horizon_min] if "horizon_min" in cols else []
+    xclause, xparams = _exclude("s")
+    where += xclause
+    params += xparams
     rows = records(db.query_df(
         f"""
         WITH latest AS (

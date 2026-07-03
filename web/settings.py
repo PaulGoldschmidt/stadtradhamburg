@@ -45,3 +45,8 @@ RATE_DOWNLOAD = os.environ.get("RATE_DOWNLOAD", "6/minute")
 
 # CORS: comma-separated origins, or "*".
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",")]
+
+# Stations to hide site-wide (depots / non-public points). Comma-separated names.
+EXCLUDE_STATIONS = tuple(
+    s.strip() for s in os.environ.get("EXCLUDE_STATIONS", "Elbewerkstätten").split(",") if s.strip()
+)
