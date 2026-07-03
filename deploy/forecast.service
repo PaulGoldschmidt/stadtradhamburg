@@ -1,0 +1,30 @@
+[Unit]
+Description=StadtRad Hamburg utilization forecast + map refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=stadtrad
+Group=stadtrad
+WorkingDirectory=/home/stadtrad/stadtradhamburg
+Environment=PYTHON=/home/stadtrad/venv/bin/python
+Environment=HORIZON_MIN=60
+ExecStart=/home/stadtrad/stadtradhamburg/deploy/forecast-refresh.sh
+
+# The analysis scripts read data under <repo>/data (data_root() probes data/gbfs
+# then data/). If your poller writes elsewhere (see gbfs-poller.service), symlink
+# it in: ln -s /var/lib/stadtrad/data/gbfs /home/stadtrad/stadtradhamburg/data
+
+# Hardening (mirrors gbfs-poller.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/home/stadtrad/stadtradhamburg/analysis/out /home/stadtrad/stadtradhamburg/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=forecast
+
+# Triggered by forecast.timer — no [Install] section (the timer owns the schedule).

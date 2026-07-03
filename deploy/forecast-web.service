@@ -1,0 +1,22 @@
+[Unit]
+Description=StadtRad forecast static site (Python http.server)
+After=network.target
+
+[Service]
+User=stadtrad
+Group=stadtrad
+WorkingDirectory=/home/stadtrad/stadtradhamburg
+# Serves the regenerated map at http://<host>:8000/ . http.server is fine for an
+# internal dashboard; front it with nginx/Caddy (or push the dir to GitHub Pages /
+# object storage) for anything public.
+ExecStart=/usr/bin/env python3 -m http.server 8000 --directory analysis/out/site
+Restart=on-failure
+RestartSec=10s
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
