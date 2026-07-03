@@ -1,0 +1,14 @@
+# Keep the build context small — the web image only needs web/ + two analysis
+# helpers + requirements-web.txt. Everything heavy is excluded or bind-mounted.
+.venv/
+.git/
+data/
+analysis/out/
+analysis/__pycache__/
+**/__pycache__/
+*.pyc
+*.mp4
+*.parquet
+*.joblib
+.DS_Store
+Shared_Mobility_GBFS-*.yaml

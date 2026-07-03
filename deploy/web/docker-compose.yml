@@ -1,0 +1,28 @@
+services:
+  web:
+    build:
+      context: ../..                 # repo root
+      dockerfile: deploy/web/Dockerfile
+    image: stadtrad-web
+    container_name: stadtrad-web
+    ports:
+      - "127.0.0.1:9507:8000"
+    volumes:
+      # The poller's Parquet store + the forecast artifact, read-only.
+      - ../../data:/app/data:ro
+      - ../../analysis/out:/app/analysis/out:ro
+    environment:
+      DATA_DIR: /app/data
+      DUCKDB_THREADS: "2"            # bound CPU per query
+      TRIP_REFRESH_SEC: "300"
+      # CORS_ORIGINS: "https://your.domain"
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s

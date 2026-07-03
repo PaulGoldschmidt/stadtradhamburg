@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StadtRad Hamburg — Open Data</title>
+  <meta name="description" content="Live and historical open data for Hamburg's StadtRad bike-share: utilization, stockout forecasts, ridership and weather." />
+  <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1>StadtRad&nbsp;Hamburg <span class="tag">open data</span></h1>
+      <p class="sub">Live bike-share utilization, stockout forecasts, and ridership history — from Deutsche&nbsp;Bahn GBFS + DWD weather.</p>
+      <p id="freshness" class="freshness">loading…</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Live "today" stat cards -->
+    <section aria-label="Today" class="cards" id="cards"></section>
+
+    <!-- Map + station detail panel -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Live station map</h2>
+        <span class="legend"><i class="dot g"></i>plenty <i class="dot y"></i>low <i class="dot r"></i>likely empty (+60&nbsp;min)</span>
+      </div>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <aside id="station" class="station hidden">
+          <button id="station-close" aria-label="close">×</button>
+          <div id="station-body"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section class="grid2">
+      <div class="card-lg">
+        <h2>Trips per day</h2>
+        <canvas id="chart-daily"></canvas>
+      </div>
+      <div class="card-lg">
+        <h2>When people ride <small>trips by weekday × hour</small></h2>
+        <div id="heatmap" class="heatmap"></div>
+      </div>
+    </section>
+
+    <section class="grid2">
+      <div class="card-lg">
+        <h2>Busiest stations</h2>
+        <canvas id="chart-stations"></canvas>
+      </div>
+      <div class="card-lg">
+        <h2>Ridership vs weather <small>each dot = one day</small></h2>
+        <canvas id="chart-weather"></canvas>
+      </div>
+    </section>
+
+    <!-- Data & API -->
+    <section class="card-lg">
+      <h2>Data &amp; API</h2>
+      <p>Everything here is served by a small read-only JSON API. Explore it in the
+        <a href="/docs">interactive API docs</a>, or download curated aggregates:</p>
+      <p class="downloads">
+        <a href="/api/download/trips_daily.csv">trips per day (CSV)</a>
+        <a href="/api/download/station_occupancy_daily.csv">station occupancy (CSV)</a>
+        <a href="/api/download/stations.csv">stations (CSV)</a>
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Data: <a href="https://data.deutschebahn.com/">Deutsche&nbsp;Bahn</a> Shared-Mobility GBFS ·
+         weather <a href="https://brightsky.dev/">Bright&nbsp;Sky</a> / DWD ·
+         map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © <a href="https://carto.com/attributions">CARTO</a>.</p>
+      <p>An open-data project. Not affiliated with StadtRad / DB. <span id="foot-fresh"></span></p>
+    </div>
+  </footer>
+
+  <script src="/static/vendor/leaflet.js"></script>
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
