@@ -130,9 +130,9 @@ async function loadHistory() {
   const bikes = await api("/api/history/bikes");
   renderBikes("#bikes-most", bikes.most);
   renderForgotten("#bikes-forgotten", bikes.forgotten);
-  if (bikes.fleet_total) {
+  if (bikes.active_count) {
     $("#bikes-forgotten-note").textContent =
-      `${fmt(bikes.never_moved)} of ${fmt(bikes.fleet_total)} bikes with 0 rides ever`;
+      `${fmt(bikes.idle_count)} of ${fmt(bikes.active_count)} in-fleet bikes idle 7+ days`;
   }
 
   renderHeatmap(await api("/api/history/heatmap"));
@@ -169,7 +169,7 @@ function renderForgotten(sel, rows) {
   $(sel).innerHTML = (rows || []).map((r) => `
     <div class="od-row">
       <span class="od-route">Bike <b>${r.bike_number}</b><small> @ ${r.station}</small></span>
-      <span class="od-trips">${fmt(r.days_parked)}<small> days parked</small></span>
+      <span class="od-trips">${fmt(r.days_idle)}<small> days idle</small></span>
     </div>`).join("");
 }
 

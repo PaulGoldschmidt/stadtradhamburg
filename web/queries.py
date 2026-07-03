@@ -407,35 +407,40 @@ def bike_usage() -> dict:
         ORDER BY t.trips DESC, t.km DESC
         """
     ))
+    # "Forgotten" = bikes that HAVE been ridden (≥1 trip) and are STILL in the
+    # fleet (seen in the last 2 days, so not removed) but have sat unused the
+    # longest — ranked by days since their last ride. Never-moved bikes are
+    # excluded, as are bikes sitting in the depot.
     sx, sp = "", []
-    if settings.EXCLUDE_STATIONS:  # don't list bikes sitting in the depot
+    if settings.EXCLUDE_STATIONS:
         ph = ", ".join(["?"] * len(settings.EXCLUDE_STATIONS))
         sx = f"AND st.name NOT IN ({ph})"
         sp = list(settings.EXCLUDE_STATIONS)
-    forgotten = records(db.query_df(
+    idle = db.query_df(
         f"""
-        WITH seen AS (
-          SELECT bike_number,
-                 arg_max(station_id, observed_at)                     AS station_id,
-                 date_diff('day', min(observed_at), max(observed_at)) AS days_parked
+        WITH now AS (SELECT max(observed_at) AS t FROM bikes),
+        lastseen AS (
+          SELECT bike_number, max(observed_at) AS last_seen,
+                 arg_max(station_id, observed_at) AS station_id
           FROM bikes WHERE station_id IS NOT NULL GROUP BY 1
-        )
-        SELECT sn.bike_number, st.name AS station, sn.days_parked
-        FROM seen sn JOIN stations st ON st.station_id = sn.station_id
-        WHERE sn.bike_number NOT IN (SELECT DISTINCT bike_number FROM trips_geo) {sx}
-        ORDER BY sn.days_parked DESC, hash(sn.bike_number) LIMIT 5
+        ),
+        lasttrip AS (SELECT bike_number, max(arrived_by) AS last_trip FROM trips_geo GROUP BY 1)
+        SELECT ls.bike_number, st.name AS station,
+               date_diff('day', lt.last_trip, (SELECT t FROM now)) AS days_idle
+        FROM lastseen ls
+        JOIN lasttrip lt USING (bike_number)                       -- moved at least once
+        JOIN stations st ON st.station_id = ls.station_id
+        WHERE ls.last_seen >= (SELECT t FROM now) - INTERVAL 2 DAY  -- still in the fleet
+          {sx}
+        ORDER BY days_idle DESC, hash(ls.bike_number)
         """,
         sp,
-    ))
-    fleet = _one(db.query_df(
-        """
-        SELECT (SELECT count(DISTINCT bike_number) FROM bikes)     AS fleet_total,
-               (SELECT count(DISTINCT bike_number) FROM trips_geo) AS moved
-        """
-    ))
-    ft, mv = int(fleet.get("fleet_total") or 0), int(fleet.get("moved") or 0)
+    )
+    forgotten = records(idle.head(5))
+    active_count = int(len(idle))
+    idle_count = int((idle["days_idle"] >= 7).sum()) if len(idle) else 0
     return {"most": most, "forgotten": forgotten,
-            "fleet_total": ft, "moved": mv, "never_moved": max(ft - mv, 0)}
+            "idle_count": idle_count, "active_count": active_count}
 
 
 # ---------- weather -------------------------------------------------------------
