@@ -11,7 +11,7 @@ async function loadCards() {
     ["Distance ridden", `${fmt(s.km)}<small> km</small>`],
     ["Bikes in use", fmt(s.bikes_in_use)],
     ["Bikes moved", fmt(s.bikes_moved)],
-    ["Empty stations now", fmt(s.stations_empty_now)],
+    ["Empty now", fmt(s.stations_empty_now)],
     ["Avg trip", `${fmt(s.avg_min)}<small> min</small>`],
   ];
   $("#cards").innerHTML = cards
