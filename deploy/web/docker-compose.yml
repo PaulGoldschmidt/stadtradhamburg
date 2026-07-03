@@ -26,3 +26,23 @@ services:
       timeout: 5s
       retries: 3
       start_period: 45s
+
+  # Ingestion: polls Deutsche Bahn GBFS every 5 min and appends to the same
+  # data/ store the web app reads, so the site auto-updates. Reuses the web
+  # image (built above), just a different command. Needs DB API credentials
+  # (clientid / clientsecret) from a .env file at the repo root.
+  poller:
+    image: stadtrad-web              # same image as web (built by the web service)
+    container_name: stadtrad-poller
+    depends_on:
+      - web                          # ensures the image is built before this starts
+    command: ["python", "scripts/gbfs_poller.py",
+              "--data-dir", "/app/data", "--interval", "300", "--log-level", "INFO"]
+    volumes:
+      - ../../data:/app/data         # read-write: the poller owns this store
+    env_file:
+      - ../../.env                   # clientid / clientsecret (required)
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    stop_grace_period: 60s           # poller drains its current cycle on SIGTERM

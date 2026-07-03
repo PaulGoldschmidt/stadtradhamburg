@@ -120,6 +120,26 @@ async def weather_ridership(request: Request):
     return await run_in_threadpool(queries.weather_ridership)
 
 
+# ---------- forecast ------------------------------------------------------------
+
+@app.get("/api/forecast/horizons", tags=["forecast"])
+async def forecast_horizons(request: Request):
+    return await run_in_threadpool(queries.forecast_horizons)
+
+
+@app.get("/api/forecast", tags=["forecast"])
+async def forecast(request: Request, horizon: int):
+    meta = await run_in_threadpool(queries.forecast_horizons)
+    if not meta["available"]:
+        raise HTTPException(status_code=404, detail="no forecast available")
+    if meta["horizons"] and horizon not in meta["horizons"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"horizon must be one of {meta['horizons']} minutes",
+        )
+    return await run_in_threadpool(queries.forecast_at, horizon)
+
+
 # ---------- per-station ---------------------------------------------------------
 
 @app.get("/api/station/{station_id}", tags=["station"])
@@ -163,3 +183,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 @app.get("/", include_in_schema=False)
 async def index():
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/forecast", include_in_schema=False)
+async def forecast_page():
+    return FileResponse(STATIC / "forecast.html")

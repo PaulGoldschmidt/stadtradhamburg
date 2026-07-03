@@ -1,23 +1,7 @@
 "use strict";
 
-const $ = (sel) => document.querySelector(sel);
-const fmt = (n) => (n == null ? "–" : Number(n).toLocaleString("en-US"));
-async function api(path) {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(path + " → " + r.status);
-  return r.json();
-}
-
-// green → yellow → red for stockout risk in [0,1]
-function riskColor(r) {
-  if (r == null) return "#9aa4b2";
-  const c0 = [46, 204, 113], c1 = [241, 196, 15], c2 = [231, 76, 60];
-  const [a, b, t] = r < 0.5 ? [c0, c1, r / 0.5] : [c1, c2, (r - 0.5) / 0.5];
-  const m = a.map((v, i) => Math.round(v + (b[i] - v) * t));
-  return `rgb(${m[0]},${m[1]},${m[2]})`;
-}
-// emptiness risk: forecast if present, else current emptiness (1 - occupancy)
-const riskOf = (s) => (s.p_empty != null ? s.p_empty : s.occ != null ? 1 - s.occ : null);
+// Live dashboard: today's stats, CURRENT-status map, and history/weather charts.
+// Forecast lives on its own page (/forecast). Depends on common.js.
 
 // ---------- live cards ----------
 async function loadCards() {
@@ -35,57 +19,38 @@ async function loadCards() {
     .join("");
 }
 
-async function loadFreshness() {
-  const h = await api("/api/health");
-  const last = new Date(h.last_observation);
-  const txt = `Data through ${last.toLocaleString("en-GB", { timeZone: "Europe/Berlin" })} · ${fmt(h.stations)} stations`
-    + (h.has_forecast ? " · forecast live" : "");
-  $("#freshness").textContent = txt;
-  $("#foot-fresh").textContent = "Last updated " + new Date().toLocaleTimeString("en-GB");
-}
-
-// ---------- map ----------
+// ---------- map (current status) ----------
 let map, markerLayer;
-function initMap() {
-  map = L.map("map", { scrollWheelZoom: false }).setView([53.55, 10.0], 12);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    attribution: "© OpenStreetMap © CARTO", maxZoom: 19,
-  }).addTo(map);
-  markerLayer = L.layerGroup().addTo(map);
-}
 async function loadStations() {
   const stations = await api("/api/stations");
   markerLayer.clearLayers();
+  const LOW = 6;  // bikes at/above this = well stocked (green); 0 = empty (red)
   for (const s of stations) {
-    const r = riskOf(s);
-    L.circleMarker([s.lat, s.lon], {
-      radius: 4 + 8 * (r == null ? 0.2 : r),
-      color: null, weight: 0, fillColor: riskColor(r), fillOpacity: 0.85,
-    })
-      .bindTooltip(`${s.name} — ${s.bikes} bikes`, { direction: "top" })
-      .on("click", () => openStation(s.station_id))
-      .addTo(markerLayer);
+    // Colour by bike AVAILABILITY, not occupancy ratio: the reported capacity is
+    // a flat placeholder, so bikes/capacity is meaningless. Users care about the
+    // count they can actually grab, which also matches the forecast's "empty = 0".
+    const emptiness = s.bikes == null ? null : Math.max(0, Math.min(1, (LOW - s.bikes) / LOW));
+    riskMarker(s.lat, s.lon, emptiness,
+      `${s.name} — ${s.bikes} bikes / ${s.docks} docks`,
+      () => openStation(s.station_id)).addTo(markerLayer);
   }
 }
 
-// ---------- station panel ----------
+// ---------- station panel (current status) ----------
 let typicalChart, timelineChart;
 async function openStation(id) {
   const d = await api("/api/station/" + id);
-  const fc = d.forecast;
-  const risk = fc && fc.p_empty != null ? fc.p_empty : null;
-  const riskBadge = risk == null ? "" :
-    `<span class="risk" style="background:${riskColor(risk)}">${Math.round(risk * 100)}% empty in 60 min</span>`;
+  const occ = d.capacity_now ? d.bikes / d.capacity_now : null;
   $("#station-body").innerHTML = `
     <h3>${d.name}</h3>
-    ${riskBadge}
     <div class="stat-row">
       <div><div class="k">Bikes now</div><div class="v">${fmt(d.bikes)}</div></div>
       <div><div class="k">Docks free</div><div class="v">${fmt(d.docks)}</div></div>
-      ${fc && fc.pred_bikes != null ? `<div><div class="k">In 60 min</div><div class="v">${Number(fc.pred_bikes).toFixed(1)}</div></div>` : ""}
+      <div><div class="k">Full</div><div class="v">${occ == null ? "–" : Math.round(occ * 100) + "%"}</div></div>
     </div>
     <div class="cap">capacity ≈ ${fmt(d.capacity_now)} · as of ${d.as_of ? new Date(d.as_of).toLocaleTimeString("en-GB", { timeZone: "Europe/Berlin" }) : "?"}</div>
-    <p class="cap" style="margin-top:12px">Typical bikes available by hour</p>
+    <p class="cap"><a href="/forecast">See the forecast for this station →</a></p>
+    <p class="cap" style="margin-top:8px">Typical bikes available by hour</p>
     <canvas id="c-typical" height="120"></canvas>
     <p class="cap">Last 3 days</p>
     <canvas id="c-timeline" height="110"></canvas>`;
@@ -98,7 +63,7 @@ async function openStation(id) {
       labels: d.typical_day.map((x) => x.hour),
       datasets: [{ data: d.typical_day.map((x) => x.avg_bikes), borderColor: "#e2001a", backgroundColor: "rgba(226,0,26,.12)", fill: true, tension: 0.35, pointRadius: 0 }],
     },
-    options: miniOpts("h"),
+    options: miniOpts(true),
   });
   timelineChart?.destroy();
   timelineChart = new Chart($("#c-timeline"), {
@@ -110,11 +75,11 @@ async function openStation(id) {
     options: { ...miniOpts(), scales: { x: { display: false }, y: { beginAtZero: true, ticks: { maxTicksLimit: 4 } } } },
   });
 }
-function miniOpts(xtitle) {
+function miniOpts(showX) {
   return {
     responsive: true, maintainAspectRatio: false, animation: false,
     plugins: { legend: { display: false } },
-    scales: { x: { ticks: { maxTicksLimit: 8, font: { size: 9 } }, title: { display: !!xtitle } }, y: { beginAtZero: true, ticks: { maxTicksLimit: 4 } } },
+    scales: { x: { ticks: { maxTicksLimit: 8, font: { size: 9 } }, display: !!showX }, y: { beginAtZero: true, ticks: { maxTicksLimit: 4 } } },
   };
 }
 $("#station-close").onclick = () => $("#station").classList.add("hidden");
@@ -126,7 +91,7 @@ async function loadHistory() {
     type: "line",
     data: {
       labels: daily.map((d) => d.day),
-      datasets: [{ label: "trips", data: daily.map((d) => d.trips), borderColor: "#e2001a", backgroundColor: "rgba(226,0,26,.10)", fill: true, tension: 0.3, pointRadius: 0 }],
+      datasets: [{ data: daily.map((d) => d.trips), borderColor: "#e2001a", backgroundColor: "rgba(226,0,26,.10)", fill: true, tension: 0.3, pointRadius: 0 }],
     },
     options: baseOpts(),
   });
@@ -141,13 +106,11 @@ async function loadHistory() {
     options: { ...baseOpts(), indexAxis: "y", scales: { x: { beginAtZero: true }, y: { ticks: { font: { size: 11 } } } } },
   });
 
-  const hm = await api("/api/history/heatmap");
-  renderHeatmap(hm);
+  renderHeatmap(await api("/api/history/heatmap"));
 }
 
 function renderHeatmap(hm) {
   const max = Math.max(1, ...hm.grid.flat());
-  const el = $("#heatmap");
   let html = `<div class="lbl"></div>` +
     hm.hours.map((h) => `<div class="hr">${h % 3 === 0 ? h : ""}</div>`).join("");
   hm.weekdays.forEach((wd, i) => {
@@ -155,10 +118,10 @@ function renderHeatmap(hm) {
     html += hm.grid[i].map((v) => {
       const t = v / max;
       const bg = `rgb(${Math.round(238 - 208 * t)},${Math.round(242 - 178 * t)},${Math.round(247 - 72 * t)})`;
-      return `<div class="cell" title="${wd} ${"–"} ${v} trips" style="background:${bg}"></div>`;
+      return `<div class="cell" title="${wd} · ${v} trips" style="background:${bg}"></div>`;
     }).join("");
   });
-  el.innerHTML = html;
+  $("#heatmap").innerHTML = html;
 }
 
 async function loadWeather() {
@@ -194,9 +157,12 @@ function baseOpts() {
 
 // ---------- boot ----------
 async function boot() {
-  initMap();
-  await Promise.allSettled([loadFreshness(), loadCards(), loadStations(), loadHistory(), loadWeather()]);
-  // live refresh (cards + map only)
-  setInterval(() => { loadFreshness(); loadCards(); loadStations(); }, 60000);
+  map = newMap("map");
+  markerLayer = L.layerGroup().addTo(map);
+  await Promise.allSettled([
+    setFreshness($("#freshness")).then((h) => { $("#foot-fresh").textContent = "Updated " + new Date().toLocaleTimeString("en-GB"); }),
+    loadCards(), loadStations(), loadHistory(), loadWeather(),
+  ]);
+  setInterval(() => { setFreshness($("#freshness")); loadCards(); loadStations(); }, 60000);
 }
 document.addEventListener("DOMContentLoaded", boot);

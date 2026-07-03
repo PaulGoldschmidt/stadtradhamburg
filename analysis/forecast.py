@@ -21,8 +21,8 @@ Targets at horizon h:
 Usage:
     .venv/bin/python analysis/forecast.py                       # train + evaluate, 60-min horizon
     .venv/bin/python analysis/forecast.py --horizon-min 30 --step-min 10
-    .venv/bin/python analysis/forecast.py --save-model          # also persist models for serving
-    .venv/bin/python analysis/forecast.py --predict             # serve: forecast the next horizon now
+    .venv/bin/python analysis/forecast.py --save-model          # also persist a model for serving
+    .venv/bin/python analysis/forecast.py --predict --horizons 30 60 90 120   # serve multi-horizon
 """
 
 from __future__ import annotations
@@ -289,15 +289,16 @@ def load_bundle(path: Path) -> dict:
     return joblib.load(path)
 
 
-def predict_live(data_dir: Path, model_path: Path, top_n: int, make_map: bool = True) -> int:
-    """Serving: load the bundle and forecast the next horizon for every station
-    from the most recent data, using FORECAST weather for the target hours."""
-    bundle = load_bundle(model_path)
-    cfg = bundle["config"]
-    step_min, horizon_steps = cfg["step_min"], cfg["horizon_steps"]
-    use_weather = cfg["use_weather"]
-    print(f"loaded {model_path.name} (horizon {cfg['horizon_min']} min, "
-          f"trained through {cfg['trained_through']})")
+def predict_live(data_dir: Path, horizons: list[int], top_n: int, make_map: bool = True) -> int:
+    """Serving: forecast every station at one or more horizons from the most
+    recent data, using FORECAST weather for the target hours. Writes a
+    LONG-format forecast_live.parquet — one row per (station, horizon)."""
+    horizons = sorted(set(horizons))
+    bundles = {h: load_bundle(default_model_path(h)) for h in horizons}  # fail early if missing
+    base_cfg = bundles[horizons[0]]["config"]
+    step_min, outage = base_cfg["step_min"], base_cfg["outage_cap_hours"]
+    use_weather = any(b["config"]["use_weather"] for b in bundles.values())
+    print(f"loaded {len(bundles)} bundle(s) for horizons {horizons} min")
 
     con = duckdb.connect()
     con.execute(
@@ -305,21 +306,20 @@ def predict_live(data_dir: Path, model_path: Path, top_n: int, make_map: bool = 
     )
 
     print("building panel from current data…")
-    build_panel(con, data_dir, step_min, cfg["outage_cap_hours"])
+    build_panel(con, data_dir, step_min, outage)
     now_ts = pd.Timestamp(con.execute("SELECT max(t) FROM panel").fetchone()[0])
-    target_ts = now_ts + pd.Timedelta(minutes=horizon_steps * step_min)
-    print(f"latest slot {now_ts}  →  target {target_ts}")
+    max_target = now_ts + pd.Timedelta(minutes=max(horizons))
+    print(f"latest slot {now_ts}; forecasting up to {max_target}")
 
     wstatus = "off"
     if use_weather:
-        # Forecast-weather swap: top up the store so the TARGET hours are covered.
-        # Past hours come back as DWD observations; future target hours as MOSMIX
-        # forecasts. Idempotent — a no-op when the store already reaches t+h.
+        # Forecast-weather swap: top up the store so all TARGET hours are covered.
+        # Past hours come back as DWD observations; future ones as MOSMIX forecasts.
         try:
             fetch_weather(
                 data_dir, HAMBURG_LAT, HAMBURG_LON,
                 now_ts.floor("h").to_pydatetime(),
-                target_ts.ceil("h").to_pydatetime(),
+                max_target.ceil("h").to_pydatetime(),
                 False, 7,
             )
         except Exception as e:  # noqa: BLE001 — serving must not die on a weather hiccup
@@ -328,66 +328,69 @@ def predict_live(data_dir: Path, model_path: Path, top_n: int, make_map: bool = 
         wmax, wfc = con.execute(
             "SELECT max(timestamp), COALESCE(sum(is_forecast::INT), 0) FROM weather"
         ).fetchone()
-        covered = wmax is not None and pd.Timestamp(wmax) >= target_ts.floor("h")
-        wstatus = (f"store through {wmax}, {int(wfc)} forecast hours; "
-                   f"target hour {'covered' if covered else 'NOT covered → null weather'}")
+        wstatus = f"store through {wmax}, {int(wfc)} forecast hours"
     print(f"weather: {wstatus}")
 
     use_w = use_weather and weather_path(data_dir).exists()
-    df = build_feature_frame(con, horizon_steps, step_min, use_w)
-
-    # Most recent slot per station with a known current level.
-    live = (df.dropna(subset=["bikes"])
-              .sort_values("t").groupby("station_id", as_index=False).tail(1).copy())
-    # Reattach the persisted prior (a training artifact — not recomputed at serving).
-    live = live.merge(bundle["prior"], on=["station_id", "dow_tgt", "hour_tgt"], how="left")
-
-    X = live[bundle["features"]]
-    delta = bundle["reg"].predict(X)
-    live["pred_bikes"] = np.clip(
-        live["bikes"].to_numpy(float) + delta, 0, live["capacity"].to_numpy(float)
-    )
-    live["p_empty"] = bundle["clf"].predict_proba(X)[:, 1]
-
     meta = con.execute("SELECT station_id, name, lat, lon FROM stations").df()
-    result = (live.merge(meta, on="station_id", how="left")
-              .assign(t_target=target_ts)
-              [["station_id", "name", "lat", "lon", "t", "t_target", "bikes",
-                "capacity", "pred_bikes", "p_empty"]]
-              .rename(columns={"bikes": "bikes_now"})
-              .sort_values("p_empty", ascending=False)
-              .reset_index(drop=True))
 
+    frames = []
+    for h in horizons:
+        bundle = bundles[h]
+        df = build_feature_frame(con, bundle["config"]["horizon_steps"], step_min, use_w)
+        # Most recent slot per station with a known current level.
+        live = (df.dropna(subset=["bikes"])
+                  .sort_values("t").groupby("station_id", as_index=False).tail(1).copy())
+        # Reattach the persisted prior (a training artifact — not recomputed at serving).
+        live = live.merge(bundle["prior"], on=["station_id", "dow_tgt", "hour_tgt"], how="left")
+        X = live[bundle["features"]]
+        delta = bundle["reg"].predict(X)
+        live["pred_bikes"] = np.clip(
+            live["bikes"].to_numpy(float) + delta, 0, live["capacity"].to_numpy(float)
+        )
+        live["p_empty"] = bundle["clf"].predict_proba(X)[:, 1]
+        live["horizon_min"] = h
+        live["t_target"] = now_ts + pd.Timedelta(minutes=h)
+        frames.append(
+            live.merge(meta, on="station_id", how="left")
+            [["station_id", "name", "lat", "lon", "t", "horizon_min", "t_target",
+              "bikes", "capacity", "pred_bikes", "p_empty"]]
+            .rename(columns={"bikes": "bikes_now"})
+        )
+        print(f"  +{h:>3} min: {len(live)} stations, mean P(empty)={live['p_empty'].mean():.3f}")
+
+    result = pd.concat(frames, ignore_index=True)
     OUT.mkdir(parents=True, exist_ok=True)
     out_parq = OUT / "forecast_live.parquet"
     result.to_parquet(out_parq, index=False)
+    print(f"\nforecast: {result['station_id'].nunique()} stations × {len(horizons)} horizons "
+          f"→ {out_parq.relative_to(REPO)}")
+
+    # Primary horizon drives the standalone folium map + the md/console summary.
+    primary = 60 if 60 in horizons else horizons[0]
+    prim = (result[result["horizon_min"] == primary]
+            .sort_values("p_empty", ascending=False).reset_index(drop=True))
+    ptarget = pd.Timestamp(now_ts + pd.Timedelta(minutes=primary))
 
     md = [
         "# StadtRad Hamburg — live utilization forecast\n",
-        f"_Model `{model_path.name}`, horizon **{cfg['horizon_min']} min**. "
-        f"Latest slot {now_ts}; target {target_ts}._\n",
-        f"_Weather: {wstatus}._\n",
-        f"## Top {top_n} stations by stockout risk at +{cfg['horizon_min']} min\n",
+        f"_Horizons {', '.join(str(h) for h in horizons)} min. Latest slot {now_ts}. "
+        f"Weather: {wstatus}._\n",
+        f"## Top {top_n} stockout risks at +{primary} min\n",
         "| station | bikes now | pred bikes | P(empty) |",
         "|---|---|---|---|",
     ]
-    for _, r in result.head(top_n).iterrows():
-        md.append(f"| {r['name']} | {r['bikes_now']:.0f} | "
-                  f"{r['pred_bikes']:.1f} | {r['p_empty']:.2f} |")
+    for _, r in prim.head(top_n).iterrows():
+        md.append(f"| {r['name']} | {r['bikes_now']:.0f} | {r['pred_bikes']:.1f} | {r['p_empty']:.2f} |")
     (OUT / "forecast_live.md").write_text("\n".join(md) + "\n")
-
-    print(f"\nforecast for {len(result)} stations → {out_parq.relative_to(REPO)} "
-          f"(+ forecast_live.md)")
 
     if make_map:
         map_html = SITE / "index.html"
-        build_forecast_map(result, map_html, horizon_min=cfg["horizon_min"],
-                           now_ts=now_ts, target_ts=target_ts)
-        print(f"map  → {map_html.relative_to(REPO)}  "
-              f"(serve: python -m http.server -d {SITE.relative_to(REPO)} 8000)")
+        build_forecast_map(prim, map_html, horizon_min=primary, now_ts=now_ts, target_ts=ptarget)
+        print(f"map  → {map_html.relative_to(REPO)}")
 
-    print(f"\ntop {min(top_n, len(result))} stockout risks at +{cfg['horizon_min']} min:")
-    print(result.drop(columns=["lat", "lon"]).head(top_n).to_string(index=False))
+    print(f"\ntop {min(top_n, len(prim))} stockout risks at +{primary} min:")
+    print(prim.drop(columns=["lat", "lon"]).head(top_n).to_string(index=False))
     return 0
 
 
@@ -453,9 +456,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--save-model", action="store_true",
                    help="Persist trained models + feature artifacts for serving.")
     p.add_argument("--predict", action="store_true",
-                   help="Serving mode: load a saved model and forecast the next horizon.")
-    p.add_argument("--model-path", type=Path, default=None,
-                   help="Bundle path (default analysis/out/forecast_model_h<horizon>.joblib).")
+                   help="Serving mode: load saved model(s) and forecast the next horizon(s).")
+    p.add_argument("--horizons", type=int, nargs="+", default=None,
+                   help="Predict at these horizons in minutes (default: just --horizon-min). "
+                        "Each needs a bundle trained with --save-model --horizon-min H.")
     p.add_argument("--top-n", type=int, default=20, help="Rows in the --predict risk table.")
     p.add_argument("--no-map", action="store_true", help="Skip the HTML map in --predict.")
     args = p.parse_args(argv)
@@ -465,9 +469,9 @@ def main(argv: list[str] | None = None) -> int:
     horizon_steps = args.horizon_min // args.step_min
 
     data_dir = data_root()
-    model_path = args.model_path or default_model_path(args.horizon_min)
     if args.predict:
-        return predict_live(data_dir, model_path, args.top_n, make_map=not args.no_map)
+        horizons = args.horizons or [args.horizon_min]
+        return predict_live(data_dir, horizons, args.top_n, make_map=not args.no_map)
 
     use_weather = not args.no_weather and weather_path(data_dir).exists()
     if not args.no_weather and not use_weather:
@@ -602,9 +606,10 @@ def main(argv: list[str] | None = None) -> int:
             "trained_through": str(train["t"].max()),
         }
         cap_df = con.execute("SELECT * FROM cap").df()
+        model_path = default_model_path(args.horizon_min)
         save_bundle(model_path, reg=reg, clf=clf, prior=prior, capacity=cap_df, config=config)
         print(f"saved model bundle → {model_path.relative_to(REPO)} "
-              f"(serve with: python analysis/forecast.py --predict --horizon-min {args.horizon_min})")
+              f"(serve with: python analysis/forecast.py --predict --horizons {args.horizon_min})")
     return 0
 
 
