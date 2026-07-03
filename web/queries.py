@@ -287,13 +287,13 @@ def top_stations() -> dict:
     else:
         od_where, od_params = "", []
 
-    def od(order: str) -> list[dict]:
+    def od(order: str, tiebreak: str) -> list[dict]:
         return records(db.query_df(
             f"""
             SELECT origin_name AS origin, dest_name AS destination, count(*) AS trips,
                    round(avg(distance_km), 2) AS avg_km
             FROM trips_geo {od_where}
-            GROUP BY 1, 2 ORDER BY trips {order}, 1, 2 LIMIT 5
+            GROUP BY 1, 2 ORDER BY trips {order}, {tiebreak} LIMIT 5
             """,
             od_params,
         ))
@@ -306,7 +306,9 @@ def top_stations() -> dict:
         """,
         od_params,
     ))
-    return {"stations": busiest, "od_most": od("DESC"), "od_least": od("ASC"),
+    return {"stations": busiest,
+            "od_most": od("DESC", "origin_name, dest_name"),
+            "od_least": od("ASC", "hash(origin_name || '|' || dest_name)"),  # varied one-off sample
             "od_distinct": summary.get("distinct_pairs"), "od_once": summary.get("once_only")}
 
 
