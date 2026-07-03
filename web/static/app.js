@@ -6,17 +6,32 @@
 // ---------- live cards ----------
 async function loadCards() {
   const s = await api("/api/stats/today");
+  const hh = (h) => String(h).padStart(2, "0");
+  // [label, value, hover-detail?] — row 1 = core counts, row 2 = superlatives w/ hover.
   const cards = [
     ["Trips today", fmt(s.trips)],
     ["Distance ridden", `${fmt(s.km)}<small> km</small>`],
     ["Bikes in use", fmt(s.bikes_in_use)],
     ["Bikes moved", fmt(s.bikes_moved)],
-    ["Longest ride", `${fmt(s.longest_km)}<small> km</small>`],
-    ["Empty now", fmt(s.stations_empty_now)],
+    ["Empty now", fmt(s.stations_empty_now), `${fmt(s.stations_empty_now)} of ${fmt(s.stations_online)} stations have no bikes`],
     ["Avg trip", `${fmt(s.avg_min)}<small> min</small>`],
+    ["Longest ride", `${fmt(s.longest_km)}<small> km</small>`,
+      s.longest_from ? `${s.longest_from} → ${s.longest_to} (${fmt(s.longest_min)} min)` : null],
+    ["Most bikes", fmt(s.most_bikes),
+      s.most_bikes_station ? `${s.most_bikes_station} — ${fmt(s.most_bikes)} bikes right now` : null],
+    ["Busiest station", fmt(s.busiest_moves),
+      s.busiest_station ? `${s.busiest_station} — ${fmt(s.busiest_moves)} arrivals + departures today` : null],
+    ["Top bike", fmt(s.top_bike_trips),
+      s.top_bike_number ? `Bike ${s.top_bike_number} — ${fmt(s.top_bike_trips)} trips today` : null],
+    ["Peak hour", s.peak_hour != null ? `${hh(s.peak_hour)}<small>:00</small>` : "–",
+      s.peak_hour != null ? `${fmt(s.peak_hour_trips)} trips between ${hh(s.peak_hour)}:00 and ${hh(s.peak_hour + 1)}:00` : null],
+    ["Available now", fmt(s.available_now),
+      `${fmt(s.available_now)} bikes free · ${fmt(s.docks_free_now)} open docks · ${fmt(s.stations_online)} stations`],
   ];
   $("#cards").innerHTML = cards
-    .map(([k, v]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .map(([k, v, tip]) =>
+      `<div class="card"${tip ? ` data-tip="${String(tip).replace(/"/g, "&quot;")}"` : ""}>` +
+      `<div class="k">${k}</div><div class="v">${v}</div></div>`)
     .join("");
 }
 

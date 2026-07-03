@@ -62,10 +62,19 @@ section { margin: 22px 0; }
 
 /* cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; position: relative; }
 .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 .card .v { font-size: 28px; font-weight: 650; margin-top: 4px; letter-spacing: -.02em; }
 .card .v small { font-size: 13px; font-weight: 500; }
+/* hover detail tooltip */
+.card[data-tip] { cursor: default; }
+.card[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute; left: 12px; right: 12px; top: calc(100% + 6px);
+  background: var(--ink); color: #fff; font-size: 12px; font-weight: 500; line-height: 1.35;
+  padding: 8px 10px; border-radius: 8px; z-index: 30; white-space: normal;
+  box-shadow: 0 6px 20px rgba(16,24,40,.28);
+}
 
 .card-lg { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
 .card-lg h2 { margin: 0 0 12px; font-size: 17px; }

@@ -105,9 +105,26 @@ def stats_today() -> dict:
         )
         SELECT sum((l.bikes = 0 AND l.installed)::INT) AS stations_empty_now,
                sum((l.docks = 0 AND l.installed)::INT) AS stations_full_now,
-               sum(l.installed::INT)                   AS stations_online
+               sum(l.installed::INT)                   AS stations_online,
+               sum(CASE WHEN l.installed THEN l.bikes ELSE 0 END) AS available_now,
+               sum(CASE WHEN l.installed THEN l.docks ELSE 0 END) AS docks_free_now
         FROM latest l JOIN stations s ON s.station_id = l.station_id
         WHERE TRUE{xclause}
+        """,
+        xparams,
+    ))
+    most_bikes = _one(db.query_df(
+        f"""
+        WITH latest AS (
+          SELECT station_id,
+                 arg_max(num_bikes_available, last_reported) AS bikes,
+                 arg_max(is_installed, last_reported)        AS installed
+          FROM observations GROUP BY 1
+        )
+        SELECT s.name AS station, l.bikes AS bikes
+        FROM latest l JOIN stations s ON s.station_id = l.station_id
+        WHERE l.installed{xclause}
+        ORDER BY l.bikes DESC, s.name LIMIT 1
         """,
         xparams,
     ))
@@ -118,15 +135,31 @@ def stats_today() -> dict:
           WHERE CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE) = DATE '{day}'
         ),
         flow AS (SELECT origin_id AS sid FROM t UNION ALL SELECT destination_id FROM t)
-        SELECT s.name AS busiest_station, count(*) AS moves
+        SELECT s.name AS station, count(*) AS moves
         FROM flow JOIN stations s ON s.station_id = flow.sid
         WHERE TRUE{xclause}
         GROUP BY 1 ORDER BY moves DESC LIMIT 1
         """,
         xparams,
     ))
-    # Longest actual ride today (by straight-line km). Drop implausible speeds
-    # (>30 km/h) so a rebalancing truck-move can't pose as the day's longest ride.
+    top_bike = _one(db.query_df(
+        f"""
+        SELECT bike_number, count(*) AS trips
+        FROM trips_geo
+        WHERE CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE) = DATE '{day}'
+        GROUP BY 1 ORDER BY trips DESC, bike_number LIMIT 1
+        """
+    ))
+    peak = _one(db.query_df(
+        f"""
+        SELECT EXTRACT(hour FROM arrived_by AT TIME ZONE '{TZ}')::INT AS hour, count(*) AS trips
+        FROM trips_geo
+        WHERE CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE) = DATE '{day}'
+        GROUP BY 1 ORDER BY trips DESC, hour LIMIT 1
+        """
+    ))
+    # Longest actual ride today (by straight-line km) + its route. Drop implausible
+    # speeds (>30 km/h) so a rebalancing truck-move can't pose as the longest ride.
     names = settings.EXCLUDE_STATIONS
     odw, odp = "", []
     if names:
@@ -135,10 +168,12 @@ def stats_today() -> dict:
         odp = list(names) * 2
     longest = _one(db.query_df(
         f"""
-        SELECT round(max(distance_km), 1) AS longest_km
+        SELECT round(distance_km, 1) AS longest_km, origin_name, dest_name,
+               round(duration_min, 0) AS longest_min
         FROM trips_geo
         WHERE CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE) = DATE '{day}'
           AND duration_min > 0 AND distance_km / (duration_min / 60.0) <= 30 {odw}
+        ORDER BY distance_km DESC LIMIT 1
         """,
         odp,
     ))
@@ -147,9 +182,19 @@ def stats_today() -> dict:
         "day": day,
         **trips,
         "bikes_in_use": bikes_in_use,
-        "longest_km": longest.get("longest_km"),
         **stations,
-        "busiest_station": busiest.get("busiest_station"),
+        "longest_km": longest.get("longest_km"),
+        "longest_from": longest.get("origin_name"),
+        "longest_to": longest.get("dest_name"),
+        "longest_min": longest.get("longest_min"),
+        "busiest_station": busiest.get("station"),
+        "busiest_moves": busiest.get("moves"),
+        "most_bikes": most_bikes.get("bikes"),
+        "most_bikes_station": most_bikes.get("station"),
+        "top_bike_number": top_bike.get("bike_number"),
+        "top_bike_trips": top_bike.get("trips"),
+        "peak_hour": peak.get("hour"),
+        "peak_hour_trips": peak.get("trips"),
     }
 
 
