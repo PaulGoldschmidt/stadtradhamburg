@@ -132,3 +132,10 @@ python analysis/clip.py --start 2026-05-29 --end 2026-06-26 --time-scale 3600
 
 Output goes to `analysis/out/clip_<window>.mp4`. The route cache
 (`analysis/out/routes.parquet`) and OSM extract (`data/osrm/`) are gitignored.
+
+
+### Workflow
+
+1. `docker compose down`
+2. `git pull`
+3. `docker compose up --build -d`
