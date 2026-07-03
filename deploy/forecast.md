@@ -16,9 +16,15 @@ and the analysis scripts must find the data under `<repo>/data` (symlink if your
 poller writes elsewhere — see the note in `forecast.service`).
 
 ```sh
-# train + persist the model bundle the refresh serves from (pick your horizon)
-.venv/bin/python analysis/forecast.py --save-model --horizon-min 60
+# train + persist one bundle per horizon the Forecast page offers
+for h in 30 60 90 120; do
+  .venv/bin/python analysis/forecast.py --save-model --horizon-min $h
+done
 ```
+
+The refresh then predicts all horizons at once (`--predict --horizons 30 60 90 120`)
+into a single long-format `forecast_live.parquet`; the website's `/forecast` page
+lets users pick which horizon to view.
 
 ## Local / quick
 

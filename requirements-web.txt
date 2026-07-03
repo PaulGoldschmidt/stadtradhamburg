@@ -9,3 +9,4 @@ pyarrow>=15
 pandas>=2.0
 pytz>=2024.1
 requests>=2.31
+python-dotenv>=1.0   # for the poller service (scripts/gbfs_poller.py) which shares this image

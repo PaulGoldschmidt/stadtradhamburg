@@ -11,9 +11,10 @@
 <body>
   <header class="site-header">
     <div class="wrap">
-      <h1>StadtRad&nbsp;Hamburg <span class="tag">open data</span></h1>
+      <h1>StadtRad&nbsp;Hamburg</h1>
       <p class="sub">Live bike-share utilization, stockout forecasts, and ridership history — from Deutsche&nbsp;Bahn GBFS + DWD weather.</p>
       <p id="freshness" class="freshness">loading…</p>
+      <nav class="nav"><a href="/" class="active">Live</a><a href="/forecast">Forecast</a></nav>
     </div>
   </header>
 
@@ -24,8 +25,8 @@
     <!-- Map + station detail panel -->
     <section class="panel">
       <div class="panel-head">
-        <h2>Live station map</h2>
-        <span class="legend"><i class="dot g"></i>plenty <i class="dot y"></i>low <i class="dot r"></i>likely empty (+60&nbsp;min)</span>
+        <h2>Live station map <small>bikes available right now</small></h2>
+        <span class="legend"><i class="dot g"></i>plenty <i class="dot y"></i>low <i class="dot r"></i>empty now &nbsp;·&nbsp; <a href="/forecast">forecast →</a></span>
       </div>
       <div class="map-wrap">
         <div id="map"></div>
@@ -43,7 +44,6 @@
         <canvas id="chart-daily"></canvas>
       </div>
       <div class="card-lg">
-        <h2>When people ride <small>trips by weekday × hour</small></h2>
         <div id="heatmap" class="heatmap"></div>
       </div>
     </section>
@@ -54,7 +54,6 @@
         <canvas id="chart-stations"></canvas>
       </div>
       <div class="card-lg">
-        <h2>Ridership vs weather <small>each dot = one day</small></h2>
         <canvas id="chart-weather"></canvas>
       </div>
     </section>
@@ -83,6 +82,7 @@
 
   <script src="/static/vendor/leaflet.js"></script>
   <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/common.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

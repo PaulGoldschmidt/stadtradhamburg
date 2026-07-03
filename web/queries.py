@@ -122,10 +122,9 @@ def stats_today() -> dict:
 
 @ttl_cache(settings.TTL_LIVE)
 def stations_live() -> list[dict]:
-    forecast_sel = "f.p_empty" if db.HAS_FORECAST else "CAST(NULL AS DOUBLE) AS p_empty"
-    forecast_join = "LEFT JOIN forecast_live f ON f.station_id = s.station_id" if db.HAS_FORECAST else ""
+    """CURRENT status per station (feeds the main map) — no forecast."""
     df = db.query_df(
-        f"""
+        """
         WITH latest AS (
           SELECT station_id,
                  arg_max(num_bikes_available, last_reported) AS bikes,
@@ -137,15 +136,65 @@ def stations_live() -> list[dict]:
                l.bikes, l.docks, l.installed,
                (l.bikes + l.docks) AS capacity_now,
                CASE WHEN (l.bikes + l.docks) > 0
-                    THEN round(l.bikes::DOUBLE / (l.bikes + l.docks), 3) END AS occ,
-               {forecast_sel}
+                    THEN round(l.bikes::DOUBLE / (l.bikes + l.docks), 3) END AS occ
         FROM stations s
         JOIN latest l ON l.station_id = s.station_id
-        {forecast_join}
         WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL
         """
     )
     return records(df)
+
+
+@ttl_cache(settings.TTL_LIVE)
+def _forecast_columns() -> list[str]:
+    if not db.HAS_FORECAST:
+        return []
+    return list(db.query_df("SELECT * FROM forecast_live LIMIT 0").columns)
+
+
+@ttl_cache(settings.TTL_LIVE)
+def forecast_horizons() -> dict:
+    """Available forecast horizons (min) + the base time the forecast was made from."""
+    cols = _forecast_columns()
+    if not cols:
+        return {"available": False, "horizons": [], "generated_at": None}
+    if "horizon_min" in cols:
+        hz = db.query_df("SELECT DISTINCT horizon_min FROM forecast_live ORDER BY 1")
+        horizons = [int(h) for h in hz["horizon_min"]]
+    else:  # legacy single-horizon file
+        horizons = []
+    gen = records(db.query_df("SELECT max(t) AS t FROM forecast_live"))
+    return {"available": True, "horizons": horizons,
+            "generated_at": gen[0]["t"] if gen else None}
+
+
+@ttl_cache(settings.TTL_LIVE)
+def forecast_at(horizon_min: int) -> dict:
+    """Per-station forecast at one horizon, joined to live coordinates + current bikes."""
+    cols = _forecast_columns()
+    if not cols:
+        return {"available": False, "horizon_min": horizon_min, "t_target": None, "stations": []}
+    where = "WHERE f.horizon_min = ? AND s.lat IS NOT NULL" if "horizon_min" in cols else "WHERE s.lat IS NOT NULL"
+    params = [horizon_min] if "horizon_min" in cols else []
+    rows = records(db.query_df(
+        f"""
+        WITH latest AS (
+          SELECT station_id, arg_max(num_bikes_available, last_reported) AS bikes_now
+          FROM observations GROUP BY 1
+        )
+        SELECT f.station_id, s.name, s.lat, s.lon,
+               f.t_target, f.pred_bikes, f.p_empty, f.capacity,
+               COALESCE(l.bikes_now, f.bikes_now) AS bikes_now
+        FROM forecast_live f
+        JOIN stations s ON s.station_id = f.station_id
+        LEFT JOIN latest l ON l.station_id = f.station_id
+        {where}
+        ORDER BY f.p_empty DESC
+        """,
+        params,
+    ))
+    return {"available": True, "horizon_min": horizon_min,
+            "t_target": rows[0]["t_target"] if rows else None, "stations": rows}
 
 
 # ---------- history -------------------------------------------------------------
@@ -261,12 +310,7 @@ def station_detail(station_id: str) -> dict:
     ))
     if not meta:
         return {}
-    if db.HAS_FORECAST:
-        fc = _one(db.query_df(
-            "SELECT p_empty, pred_bikes, t_target FROM forecast_live WHERE station_id = ?",
-            [station_id],
-        ))
-        meta["forecast"] = fc or None
+    # Current status only — forecasts are served per-horizon by /api/forecast.
     typical = records(db.query_df(
         f"""
         SELECT EXTRACT(hour FROM last_reported AT TIME ZONE '{TZ}')::INT AS hour,
