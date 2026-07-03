@@ -7,15 +7,16 @@
 #   2. run the forecast in serving mode — this also tops up *forecast* weather for
 #      the target hour and renders the page at analysis/out/site/index.html
 #
-# Prerequisite: a trained model bundle must already exist. Create one once with:
-#   .venv/bin/python analysis/forecast.py --save-model --horizon-min "${HORIZON_MIN:-60}"
+# Prerequisite: a trained model bundle per horizon must already exist. Create them
+# once with (repeat for each horizon in HORIZONS):
+#   for h in 30 60 90 120; do .venv/bin/python analysis/forecast.py --save-model --horizon-min $h; done
 #
-# Env overrides: PYTHON (interpreter), HORIZON_MIN (must match the saved bundle).
+# Env overrides: PYTHON (interpreter), HORIZONS (space-separated minutes; each needs a bundle).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PY="${PYTHON:-.venv/bin/python}"
-HORIZON_MIN="${HORIZON_MIN:-60}"
+HORIZONS="${HORIZONS:-30 60 90 120}"
 
 "$PY" analysis/weather.py --log-level WARNING
-"$PY" analysis/forecast.py --predict --horizon-min "$HORIZON_MIN"
+"$PY" analysis/forecast.py --predict --horizons $HORIZONS

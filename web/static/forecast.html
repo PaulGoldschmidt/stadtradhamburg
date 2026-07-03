@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forecast — StadtRad Hamburg</title>
+  <meta name="description" content="Predicted StadtRad Hamburg station stockout risk at a chosen future timepoint." />
+  <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1>StadtRad&nbsp;Hamburg</h1>
+      <p class="sub">Where will bikes run out? Pick how far ahead to look and the map shows the predicted stockout risk.</p>
+      <p id="freshness" class="freshness">loading…</p>
+      <nav class="nav"><a href="/">Live</a><a href="/forecast" class="active">Forecast</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Forecast map <small id="target-label"></small></h2>
+          <div id="horizons" class="pills" role="tablist" aria-label="Forecast horizon"></div>
+        </div>
+        <span class="legend"><i class="dot g"></i>safe <i class="dot y"></i>watch <i class="dot r"></i>likely empty</span>
+      </div>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <aside id="station" class="station hidden">
+          <button id="station-close" aria-label="close">×</button>
+          <div id="station-body"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="card-lg">
+      <h2>Most at risk <small id="risk-label"></small></h2>
+      <div id="risk-list" class="risk-list"></div>
+    </section>
+
+    <section id="unavailable" class="card-lg" style="display:none">
+      <h2>Forecast unavailable</h2>
+      <p>No forecast has been generated yet. Run the forecast pipeline
+        (<code>analysis/forecast.py --predict --horizons 30 60 90 120</code>) to populate it.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Forecasts are model estimates (LightGBM over recent flow, time-of-day, and weather), not guarantees.
+         Data: <a href="https://data.deutschebahn.com/">Deutsche&nbsp;Bahn</a> GBFS ·
+         weather <a href="https://brightsky.dev/">Bright&nbsp;Sky</a> / DWD ·
+         map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © <a href="https://carto.com/attributions">CARTO</a>.</p>
+    </div>
+  </footer>
+
+  <script src="/static/vendor/leaflet.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/forecast.js"></script>
+</body>
+</html>

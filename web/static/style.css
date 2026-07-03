@@ -29,6 +29,26 @@ small { color: var(--muted); font-weight: 400; font-size: .72em; margin-left: .4
 .sub { color: var(--muted); margin: 8px 0 0; max-width: 60ch; }
 .freshness { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
 
+/* nav */
+.nav { display: flex; gap: 8px; margin: 14px 0 0; }
+.nav a { padding: 6px 14px; border-radius: 999px; font-size: 14px; font-weight: 550; color: var(--muted); border: 1px solid var(--line); background: #fff; }
+.nav a:hover { text-decoration: none; border-color: var(--accent); }
+.nav a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* horizon pills */
+.pills { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.pill { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 13px; font-weight: 550; cursor: pointer; }
+.pill:hover { border-color: var(--accent); }
+.pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* forecast risk list */
+.risk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+.risk-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.risk-row:hover { border-color: var(--accent); }
+.risk-badge { color: #fff; font-weight: 650; font-size: 12px; padding: 2px 7px; border-radius: 6px; min-width: 40px; text-align: center; }
+.risk-name { flex: 1; font-weight: 550; }
+.risk-sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
 main { padding: 24px 0 40px; }
 section { margin: 22px 0; }
 
