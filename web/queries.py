@@ -305,43 +305,70 @@ def top_stations() -> dict:
     else:
         od_where, od_params = "", []
 
-    def od(order: str, tiebreak: str) -> list[dict]:
-        return records(db.query_df(
-            f"""
-            SELECT origin_name AS origin, dest_name AS destination, count(*) AS trips,
-                   round(avg(distance_km), 2) AS avg_km
-            FROM trips_geo {od_where}
-            GROUP BY 1, 2 ORDER BY trips {order}, {tiebreak} LIMIT 5
-            """,
-            od_params,
-        ))
-
-    summary = _one(db.query_df(
+    od_most = records(db.query_df(
         f"""
-        SELECT count(*) AS distinct_pairs, COALESCE(sum((c = 1)::INT), 0) AS once_only FROM (
-          SELECT count(*) AS c FROM trips_geo {od_where} GROUP BY origin_name, dest_name
-        )
+        SELECT origin_name AS origin, dest_name AS destination, count(*) AS trips,
+               round(avg(distance_km), 2) AS avg_km
+        FROM trips_geo {od_where}
+        GROUP BY 1, 2 ORDER BY trips DESC, origin_name, dest_name LIMIT 5
         """,
         od_params,
     ))
-    return {"stations": busiest,
-            "od_most": od("DESC", "origin_name, dest_name"),
-            "od_least": od("ASC", "hash(origin_name || '|' || dest_name)"),  # varied one-off sample
-            "od_distinct": summary.get("distinct_pairs"), "od_once": summary.get("once_only")}
+
+    # "Be the first one": directed station pairs nobody has ridden yet. Depot and
+    # coordinate-less stations excluded from both ends.
+    onx, onp = "", []
+    if names:
+        ph = ", ".join(["?"] * len(names))
+        onx = f"AND o.name NOT IN ({ph}) AND d.name NOT IN ({ph})"
+        onp = list(names) * 2
+    never_sql = f"""
+        WITH ridden AS (SELECT DISTINCT origin_id AS o, destination_id AS d FROM trips_geo)
+        SELECT o.name AS origin, d.name AS destination
+        FROM stations o CROSS JOIN stations d
+        WHERE o.station_id <> d.station_id
+          AND o.lat IS NOT NULL AND d.lat IS NOT NULL {onx}
+          AND NOT EXISTS (SELECT 1 FROM ridden r WHERE r.o = o.station_id AND r.d = d.station_id)
+    """
+    never = records(db.query_df(
+        never_sql + " ORDER BY hash(o.name || '|' || d.name) LIMIT 5", onp))
+    never_count = _one(db.query_df(
+        f"SELECT count(*) AS n FROM ({never_sql})", onp)).get("n")
+
+    return {"stations": busiest, "od_most": od_most,
+            "od_never": never, "od_never_count": never_count}
 
 
 @ttl_cache(settings.TTL_HISTORY)
 def bike_usage() -> dict:
-    """Most- and least-ridden individual bikes (by the number printed on the frame),
-    plus how many of the fleet never changed station."""
-    def by(order: str, tiebreak: str) -> list[dict]:
-        return records(db.query_df(
-            f"""
-            SELECT bike_number, count(*) AS trips,
-                   round(sum(distance_km), 1) AS km
-            FROM trips_geo GROUP BY 1 ORDER BY trips {order}, {tiebreak} LIMIT 5
-            """
-        ))
+    """Most-ridden bikes, plus 'forgotten' bikes — ones with zero rides ever (never
+    changed station), where they've sat and for how long."""
+    most = records(db.query_df(
+        """
+        SELECT bike_number, count(*) AS trips, round(sum(distance_km), 1) AS km
+        FROM trips_geo GROUP BY 1 ORDER BY trips DESC, km DESC LIMIT 5
+        """
+    ))
+    sx, sp = "", []
+    if settings.EXCLUDE_STATIONS:  # don't list bikes sitting in the depot
+        ph = ", ".join(["?"] * len(settings.EXCLUDE_STATIONS))
+        sx = f"AND st.name NOT IN ({ph})"
+        sp = list(settings.EXCLUDE_STATIONS)
+    forgotten = records(db.query_df(
+        f"""
+        WITH seen AS (
+          SELECT bike_number,
+                 arg_max(station_id, observed_at)                     AS station_id,
+                 date_diff('day', min(observed_at), max(observed_at)) AS days_parked
+          FROM bikes WHERE station_id IS NOT NULL GROUP BY 1
+        )
+        SELECT sn.bike_number, st.name AS station, sn.days_parked
+        FROM seen sn JOIN stations st ON st.station_id = sn.station_id
+        WHERE sn.bike_number NOT IN (SELECT DISTINCT bike_number FROM trips_geo) {sx}
+        ORDER BY sn.days_parked DESC, hash(sn.bike_number) LIMIT 5
+        """,
+        sp,
+    ))
     fleet = _one(db.query_df(
         """
         SELECT (SELECT count(DISTINCT bike_number) FROM bikes)     AS fleet_total,
@@ -349,8 +376,7 @@ def bike_usage() -> dict:
         """
     ))
     ft, mv = int(fleet.get("fleet_total") or 0), int(fleet.get("moved") or 0)
-    return {"most": by("DESC", "km DESC"),
-            "least": by("ASC", "hash(bike_number)"),   # varied sample of barely-ridden bikes
+    return {"most": most, "forgotten": forgotten,
             "fleet_total": ft, "moved": mv, "never_moved": max(ft - mv, 0)}
 
 

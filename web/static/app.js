@@ -107,17 +107,17 @@ async function loadHistory() {
     options: { ...baseOpts(), indexAxis: "y", scales: { x: { beginAtZero: true }, y: { ticks: { font: { size: 11 } } } } },
   });
   renderOD("#od-most", top.od_most);
-  renderOD("#od-least", top.od_least);
-  if (top.od_distinct != null) {
-    $("#od-least-note").textContent = `${fmt(top.od_once)} of ${fmt(top.od_distinct)} routes ridden only once`;
+  renderNever("#od-never", top.od_never);
+  if (top.od_never_count != null) {
+    $("#od-never-note").textContent = `${fmt(top.od_never_count)} station pairs never ridden`;
   }
 
   const bikes = await api("/api/history/bikes");
   renderBikes("#bikes-most", bikes.most);
-  renderBikes("#bikes-least", bikes.least);
+  renderForgotten("#bikes-forgotten", bikes.forgotten);
   if (bikes.fleet_total) {
-    $("#bikes-least-note").textContent =
-      `${fmt(bikes.never_moved)} of ${fmt(bikes.fleet_total)} bikes never changed station`;
+    $("#bikes-forgotten-note").textContent =
+      `${fmt(bikes.never_moved)} of ${fmt(bikes.fleet_total)} bikes with 0 rides ever`;
   }
 
   renderHeatmap(await api("/api/history/heatmap"));
@@ -131,11 +131,27 @@ function renderOD(sel, rows) {
     </div>`).join("");
 }
 
+function renderNever(sel, rows) {
+  $(sel).innerHTML = (rows || []).map((r) => `
+    <div class="od-row">
+      <span class="od-route">${r.origin} <span class="od-arrow">→</span> ${r.destination}</span>
+      <span class="od-trips"><small>never ridden</small></span>
+    </div>`).join("");
+}
+
 function renderBikes(sel, rows) {
   $(sel).innerHTML = (rows || []).map((r) => `
     <div class="od-row">
       <span class="od-route">Bike <b>${r.bike_number}</b></span>
       <span class="od-trips">${fmt(r.trips)}<small> ${r.trips === 1 ? "trip" : "trips"} · ${fmt(r.km)} km</small></span>
+    </div>`).join("");
+}
+
+function renderForgotten(sel, rows) {
+  $(sel).innerHTML = (rows || []).map((r) => `
+    <div class="od-row">
+      <span class="od-route">Bike <b>${r.bike_number}</b><small> @ ${r.station}</small></span>
+      <span class="od-trips">${fmt(r.days_parked)}<small> days parked</small></span>
     </div>`).join("");
 }
 
