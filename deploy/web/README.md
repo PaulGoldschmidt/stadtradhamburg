@@ -57,6 +57,14 @@ To retrain the models (not just re-predict), do it off-box and re-transfer the
 bundles — the loop only *predicts*. Forecast logs:
 `docker compose -f deploy/web/docker-compose.yml logs -f forecast`.
 
+## Update a deployment
+
+```sh
+docker compose -f deploy/web/docker-compose.yml down
+git pull
+docker compose -f deploy/web/docker-compose.yml up --build -d
+```
+
 ## Local dev (no Docker)
 
 ```sh
@@ -77,4 +85,3 @@ bundles — the loop only *predicts*. Forecast logs:
 - Data grows over months → the startup/refresh trip rebuild scans all of
   `bikes/`; bound it to recent `date=` partitions later (same note as the
   forecast `--predict` scaling caveat).
-```

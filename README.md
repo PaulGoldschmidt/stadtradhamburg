@@ -1,141 +1,81 @@
-# Stadtrad Hamburg: Open Data Science
-Data Science with open data from the Stadtrad Hamburg Portal.
-Live Website hosted at [rad.haw-hamburg.eu](https://rad.haw-hamburg.eu)
+# StadtRad Hamburg: Open Data Science
 
-## Running the poller 
-`scripts/stadtrad_poller.py` polls that API on a 5-minute cadence and appends only-new observations to a partitioned Parquet store under `data/`.
+Trip reconstruction, statistics, stockout forecasts, and visualizations for
+Hamburg's StadtRad bike-share, built on openly available data. Live at
+[rad.haw-hamburg.eu](https://rad.haw-hamburg.eu).
+
+A small project for the course *Urbane Mobilität und Elektromobilität*
+(summer semester 2026) at the Hamburg University of Applied Sciences
+(HAW Hamburg). This code is shipped as-is, without any guarantees
+([MIT license](LICENSE)).
+
+## How it works
+
+- `scripts/gbfs_poller.py` snapshots Deutsche Bahn's Shared-Mobility GBFS API
+  every 5 minutes into a partitioned Parquet store. A bike that is being ridden
+  is *absent* from a snapshot — that absence is what makes trips reconstructable.
+- `analysis/` turns the snapshots into trips (`_trips.py` is the single source
+  of truth for what a trip is), stats reports, a forecast, and animated clips.
+- `web/` serves the public dashboard and read-only JSON API.
+
+## Collecting data
+
+Deutsche Bahn API-Marketplace credentials go into `.env` at the repo root as
+`clientid` / `clientsecret`.
 
 ```sh
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# one cycle (useful for cron / smoke test)
-python scripts/stadtrad_poller.py --once
-
-# run as a daemon
-python scripts/stadtrad_poller.py
+python scripts/gbfs_poller.py --once    # one cycle; run as a service for real coverage
 ```
 
-Output layout:
+Store layout (autodetected under `data/` or `data/gbfs/`):
 
 ```
 data/
-  datastreams.parquet                          # station metadata, refreshed daily
-  observations/date=YYYY-MM-DD/part-*.parquet  # one file per poll cycle
-  state.json                                   # per-station last phenomenonTime cursor
+  stations.parquet                              # station metadata, refreshed daily
+  observations/date=YYYY-MM-DD/part-*.parquet   # per-station status, one file per cycle
+  bikes/date=YYYY-MM-DD/part-*.parquet          # per-bike snapshot, every cycle
+  weather/                                      # DWD hourly weather (analysis/weather.py)
+  state.json                                    # dedup cursors
 ```
 
-Read it back with pyarrow / DuckDB:
+GBFS has no historical backlog — a missed cycle is data lost, so run the poller
+as a service (`deploy/gbfs-poller.service`). The first run only seeds cursors
+and intentionally writes nothing. (`scripts/stadtrad_poller.py` polled the
+city's SensorThings feed, silent since 2026-03-31; kept for reference.)
 
-```python
-import pyarrow.dataset as ds
-ds.dataset("data/observations", partitioning="hive").to_table()
-```
-
-The **first** run only seeds cursors — it intentionally writes no observations,
-so the dataset only contains data from the moment the poller started.
-
-## Alternative source: GBFS via Deutsche Bahn
-
-The Hamburg SensorThings feed has been silent since 2026-03-31. As a fallback,
-`scripts/gbfs_poller.py` polls the same StadtRad data via Deutsche Bahn's
-Shared-Mobility GBFS API (`apis.deutschebahn.com`). It writes to a separate
-`data/gbfs/` tree:
-
-```
-data/gbfs/
-  stations.parquet                                     # station metadata (daily refresh)
-  observations/date=YYYY-MM-DD/part-*.parquet          # per-station status (bikes/docks available)
-  bikes/date=YYYY-MM-DD/part-*.parquet                 # per-bike snapshot, every cycle
-  state.json                                           # per-station last_reported cursor
-```
-
-Credentials are loaded from `.env` at the repo root (keys `clientid` and
-`clientsecret` — both required). Usage is otherwise identical:
+## Website & API
 
 ```sh
-python scripts/gbfs_poller.py --once       # smoke test
-python scripts/gbfs_poller.py              # daemon
+pip install -r requirements-web.txt
+python -m uvicorn web.app:app --reload --port 8000
 ```
 
-GBFS returns only the *current* snapshot; there is no historical backlog, so a
-missed cycle is data lost. Run as a service for continuous coverage — see
-`deploy/gbfs-poller.service`.
+Dashboard at `/`, per-station pages at `/station/<id>`, forecast at
+`/forecast`, API docs at `/docs`. The containerized production stack
+(web + poller + forecast) and its update workflow are documented in
+[`deploy/web/README.md`](deploy/web/README.md).
 
-### Inferring rentals from `bikes/`
-
-Each row in `bikes/` is one visible bike in one poll cycle, keyed by the stable
-`bike_number` (e.g. `"30277"` — the number printed on the frame). A bike that
-is currently being ridden is *absent* from the snapshot; it reappears at the
-destination once parked. The diff between consecutive snapshots therefore
-yields rentals: bike X last seen at station A at T1, first seen at station B at
-T2 → one rental from A to B between T1 and T2.
-
-DuckDB starter (run once a few hours of data have accumulated):
-
-```python
-import duckdb
-con = duckdb.connect()
-con.execute("CREATE VIEW b AS SELECT * FROM 'data/gbfs/bikes/date=*/part-*.parquet'")
-con.execute("""
-  WITH ordered AS (
-    SELECT bike_number, station_id, observed_at,
-           LAG(station_id)  OVER w AS prev_station,
-           LAG(observed_at) OVER w AS prev_seen
-    FROM b WHERE station_id IS NOT NULL
-    WINDOW w AS (PARTITION BY bike_number ORDER BY observed_at)
-  )
-  SELECT bike_number, prev_station AS origin, station_id AS destination,
-         prev_seen AS departed_after, observed_at AS arrived_by
-  FROM ordered
-  WHERE prev_station IS NOT NULL AND prev_station <> station_id
-  ORDER BY arrived_by
-""").df().head()
-```
-
-Trip endpoints are bounded by the poll interval (±5 min by default), so
-duration estimates are coarse. Sub-5-minute trips and return-to-same-station
-trips are invisible.
-
-See `analysis/trips.ipynb` for an end-to-end trip-inference and visualization
-pipeline (timeseries, top stations, duration histogram, interactive OD map),
-and `analysis/stats.py` for extended descriptive statistics (outliers, net
-flow, occupancy).
-
-## Rendering a trips clip
-
-`analysis/clip.py` produces a dark-theme MP4 of trips flowing across Hamburg,
-with road-following routes provided by a local OSRM service. One-time setup:
+## Analysis
 
 ```sh
-brew install ffmpeg                                 # macOS; otherwise apt/dnf
-bash deploy/osrm/setup.sh                           # builds the OSRM graph
+python analysis/stats.py                 # stats report → analysis/out/
+jupyter notebook analysis/trips.ipynb    # trip inference + interactive maps
+python analysis/forecast.py --help       # stockout forecast; deployment: deploy/forecast.md
+```
+
+Trips are heuristic and coarse: endpoints are bounded by the ±5-minute poll
+interval, sub-5-minute and same-station round trips are invisible, and operator
+rebalancing can look like an implausibly fast ride.
+
+## Trips clip (MP4)
+
+Requires ffmpeg and a local OSRM (bicycle profile):
+
+```sh
+bash deploy/osrm/setup.sh
 docker compose -f deploy/osrm/docker-compose.yml up -d
+python analysis/clip.py --day 2026-06-23 --routes-only   # warm the route cache
+python analysis/clip.py --day 2026-06-23                 # render → analysis/out/
 ```
-
-Then:
-
-```sh
-# Warm the per-OD-pair route cache (re-runs are no-ops)
-python analysis/clip.py --day 2026-06-23 --routes-only
-
-# Render one day, 1 sec = 5 min real
-python analysis/clip.py --day 2026-06-23
-
-# Render a single evening peak (quick smoke test)
-python analysis/clip.py --day 2026-06-23 --start-hour 17 --end-hour 18 \
-  --time-scale 60 --fps 30
-
-# Full 29-day hyperlapse, 1 sec = 1 h real
-python analysis/clip.py --start 2026-05-29 --end 2026-06-26 --time-scale 3600
-```
-
-Output goes to `analysis/out/clip_<window>.mp4`. The route cache
-(`analysis/out/routes.parquet`) and OSM extract (`data/osrm/`) are gitignored.
-
-
-### Workflow
-
-1. `docker compose down`
-2. `git pull`
-3. `docker compose up --build -d`
