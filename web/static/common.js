@@ -39,6 +39,32 @@ function riskMarker(lat, lon, risk, tooltip, onClick) {
   return marker;
 }
 
+// Weekday × hour trip heatmap (live dashboard + station pages). `hm` is the
+// API shape {weekdays, hours, grid}.
+function renderHeatmap(sel, hm) {
+  const max = Math.max(1, ...hm.grid.flat());
+  let html = `<div class="lbl"></div>` +
+    hm.hours.map((h) => `<div class="hr">${h % 3 === 0 ? h : ""}</div>`).join("");
+  hm.weekdays.forEach((wd, i) => {
+    html += `<div class="lbl">${wd}</div>`;
+    html += hm.grid[i].map((v) => {
+      const t = v / max;
+      const bg = `rgb(${Math.round(238 - 208 * t)},${Math.round(242 - 178 * t)},${Math.round(247 - 72 * t)})`;
+      return `<div class="cell" title="${wd} · ${v} trips" style="background:${bg}"></div>`;
+    }).join("");
+  });
+  $(sel).innerHTML = html;
+}
+
+// Default Chart.js options for the full-width history charts.
+function baseOpts() {
+  return {
+    responsive: true, maintainAspectRatio: true, aspectRatio: 1.9, animation: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ticks: { maxTicksLimit: 8, font: { size: 10 } } }, y: { beginAtZero: true } },
+  };
+}
+
 async function setFreshness(el) {
   const h = await api("/api/health");
   const last = new Date(h.last_observation);

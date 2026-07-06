@@ -34,6 +34,7 @@ def data_dir() -> Path:
 # DuckDB CPU bound + cache lifetimes (seconds).
 DUCKDB_THREADS = _int("DUCKDB_THREADS", 2)
 TRIP_REFRESH_SEC = _int("TRIP_REFRESH_SEC", 300)
+LIVE_REFRESH_SEC = _int("LIVE_REFRESH_SEC", 60)
 TTL_LIVE = _int("TTL_LIVE", 60)
 TTL_HISTORY = _int("TTL_HISTORY", 3600)
 TTL_STATION = _int("TTL_STATION", 300)

@@ -65,7 +65,7 @@ async function openStation(id) {
       <div><div class="k">Full</div><div class="v">${occ == null ? "–" : Math.round(occ * 100) + "%"}</div></div>
     </div>
     <div class="cap">capacity ≈ ${fmt(d.capacity_now)} · as of ${d.as_of ? new Date(d.as_of).toLocaleTimeString("en-GB", { timeZone: "Europe/Berlin" }) : "?"}</div>
-    <p class="cap"><a href="/forecast">See the forecast for this station →</a></p>
+    <p class="cap"><a href="/station/${d.station_id}">Full station stats →</a> · <a href="/forecast">Forecast →</a></p>
     <p class="cap" style="margin-top:8px">Typical bikes available by hour</p>
     <canvas id="c-typical" height="120"></canvas>
     <p class="cap">Last 3 days</p>
@@ -135,7 +135,7 @@ async function loadHistory() {
       `${fmt(bikes.idle_count)} of ${fmt(bikes.active_count)} in-fleet bikes idle 7+ days`;
   }
 
-  renderHeatmap(await api("/api/history/heatmap"));
+  renderHeatmap("#heatmap", await api("/api/history/heatmap"));
 }
 
 function renderOD(sel, rows) {
@@ -173,21 +173,6 @@ function renderForgotten(sel, rows) {
     </div>`).join("");
 }
 
-function renderHeatmap(hm) {
-  const max = Math.max(1, ...hm.grid.flat());
-  let html = `<div class="lbl"></div>` +
-    hm.hours.map((h) => `<div class="hr">${h % 3 === 0 ? h : ""}</div>`).join("");
-  hm.weekdays.forEach((wd, i) => {
-    html += `<div class="lbl">${wd}</div>`;
-    html += hm.grid[i].map((v) => {
-      const t = v / max;
-      const bg = `rgb(${Math.round(238 - 208 * t)},${Math.round(242 - 178 * t)},${Math.round(247 - 72 * t)})`;
-      return `<div class="cell" title="${wd} · ${v} trips" style="background:${bg}"></div>`;
-    }).join("");
-  });
-  $("#heatmap").innerHTML = html;
-}
-
 async function loadWeather() {
   const w = await api("/api/weather/ridership");
   if (!w.length) { $("#chart-weather").closest(".card-lg").style.display = "none"; return; }
@@ -209,14 +194,6 @@ async function loadWeather() {
       scales: { x: { title: { display: true, text: "avg temperature (°C)" } }, y: { title: { display: true, text: "trips" }, beginAtZero: true } },
     },
   });
-}
-
-function baseOpts() {
-  return {
-    responsive: true, maintainAspectRatio: true, aspectRatio: 1.9, animation: false,
-    plugins: { legend: { display: false } },
-    scales: { x: { ticks: { maxTicksLimit: 8, font: { size: 10 } } }, y: { beginAtZero: true } },
-  };
 }
 
 // ---------- boot ----------

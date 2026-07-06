@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Station — StadtRad Hamburg</title>
+  <meta name="description" content="Per-station StadtRad Hamburg statistics: when people ride here, top destinations, and live availability." />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1 id="station-title">loading…</h1>
+      <p class="sub" id="station-sub">Trips are reconstructed from 5-minute GBFS snapshots, so counts are lower bounds.</p>
+      <p id="freshness" class="freshness">loading…</p>
+      <nav class="nav"><a href="/">Live</a><a href="/forecast">Forecast</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Station stat cards -->
+    <section aria-label="Station stats" class="cards" id="cards"></section>
+
+    <section class="grid2">
+      <div class="card-lg">
+        <h2>When people ride here <small id="heatmap-note"></small></h2>
+        <div id="heatmap" class="heatmap"></div>
+      </div>
+      <div class="card-lg">
+        <h2>Top destinations <small>trips starting here</small></h2>
+        <div id="top-dest" class="od-table"></div>
+      </div>
+    </section>
+
+    <section class="grid2">
+      <div class="card-lg">
+        <h2>Typical day <small>avg bikes available by hour</small></h2>
+        <canvas id="c-typical"></canvas>
+      </div>
+      <div class="card-lg">
+        <h2>Last 3 days <small>bikes available</small></h2>
+        <canvas id="c-timeline"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Data: <a href="https://data.deutschebahn.com/">Deutsche&nbsp;Bahn</a> Shared-Mobility GBFS ·
+         weather <a href="https://brightsky.dev/">Bright&nbsp;Sky</a> / DWD.</p>
+      <p>An open-data project. Not affiliated with StadtRad / DB. A project by <a href="https://github.com/paulgoldschmidt">Paul Goldschmidt</a>.</p>
+    </div>
+  </footer>
+
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/station.js"></script>
+</body>
+</html>
