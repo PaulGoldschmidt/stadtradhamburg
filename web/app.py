@@ -1,9 +1,12 @@
 """FastAPI app: curated JSON API + static single-page dashboard.
 
-Startup warms the DuckDB connection + trip cache; a background task rebuilds the
-trip cache every TRIP_REFRESH_SEC. All query work runs in a threadpool (the
-DuckDB access itself is lock-serialized) and is TTL-cached. Per-IP rate limits via
-slowapi. See deploy/web/ for the container CPU/memory limits.
+Startup warms the DuckDB connection, materialized tables, and response caches; a
+background task then refreshes the current-status table every LIVE_REFRESH_SEC
+and does the full trips rebuild every TRIP_REFRESH_SEC, re-warming the response
+caches after each — so requests are always served from memory and never pay a
+Parquet scan. All query work runs in a threadpool (the DuckDB access itself is
+lock-serialized) and is TTL-cached. Per-IP rate limits via slowapi. See
+deploy/web/ for the container CPU/memory limits.
 """
 
 from __future__ import annotations
@@ -33,17 +36,33 @@ STATIC = Path(__file__).resolve().parent / "static"
 
 
 async def _refresher() -> None:
+    """Cheap current-status refresh every LIVE_REFRESH_SEC; full trips rebuild
+    every TRIP_REFRESH_SEC. Each cycle re-warms the affected response caches."""
+    period = settings.LIVE_REFRESH_SEC
+    heavy_every = max(1, round(settings.TRIP_REFRESH_SEC / period))
+    cycle = 0
     while True:
-        await asyncio.sleep(settings.TRIP_REFRESH_SEC)
+        await asyncio.sleep(period)
+        cycle += 1
         try:
-            await run_in_threadpool(db.refresh_trips)
+            if cycle % heavy_every == 0:
+                await run_in_threadpool(db.refresh_trips)
+                await run_in_threadpool(queries.warm_history)
+            else:
+                await run_in_threadpool(db.refresh_live)
+            await run_in_threadpool(queries.warm_live)
         except Exception:
-            log.exception("background trip refresh failed")
+            log.exception("background refresh failed")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_in_threadpool(db.init)
+    try:
+        await run_in_threadpool(queries.warm_history)
+        await run_in_threadpool(queries.warm_live)
+    except Exception:
+        log.exception("startup cache warm failed")
     task = asyncio.create_task(_refresher())
     try:
         yield
@@ -156,6 +175,14 @@ async def station_detail(request: Request, station_id: str):
     return data
 
 
+@app.get("/api/station/{station_id}/insights", tags=["station"])
+async def station_insights(request: Request, station_id: str):
+    data = await run_in_threadpool(queries.station_insights, station_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="unknown station")
+    return data
+
+
 # ---------- downloads (curated aggregates) --------------------------------------
 
 @app.get("/api/download/{filename}", tags=["download"])
@@ -194,3 +221,9 @@ async def index():
 @app.get("/forecast", include_in_schema=False)
 async def forecast_page():
     return FileResponse(STATIC / "forecast.html")
+
+
+@app.get("/station/{station_id}", include_in_schema=False)
+async def station_page(station_id: str):
+    # The shell is static; station.js reads the id from the URL path.
+    return FileResponse(STATIC / "station.html")
