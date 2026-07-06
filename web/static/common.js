@@ -4,6 +4,12 @@
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const fmt = (n) => (n == null ? "–" : Number(n).toLocaleString("en-US"));
+const hh = (h) => String(h).padStart(2, "0");
+
+// Escape a data-derived string (station names come from the GBFS feed) for
+// interpolation into HTML — element text or a double-quoted attribute.
+const esc = (s) =>
+  String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 async function api(path) {
   const r = await fetch(path);
@@ -40,8 +46,8 @@ function riskMarker(lat, lon, risk, tooltip, onClick) {
 }
 
 // Weekday × hour trip heatmap (live dashboard + station pages). `hm` is the
-// API shape {weekdays, hours, grid}.
-function renderHeatmap(sel, hm) {
+// API shape {weekdays, hours, grid}; `unit` labels the tooltip counts.
+function renderHeatmap(sel, hm, unit = "trips") {
   const max = Math.max(1, ...hm.grid.flat());
   let html = `<div class="lbl"></div>` +
     hm.hours.map((h) => `<div class="hr">${h % 3 === 0 ? h : ""}</div>`).join("");
@@ -50,10 +56,21 @@ function renderHeatmap(sel, hm) {
     html += hm.grid[i].map((v) => {
       const t = v / max;
       const bg = `rgb(${Math.round(238 - 208 * t)},${Math.round(242 - 178 * t)},${Math.round(247 - 72 * t)})`;
-      return `<div class="cell" title="${wd} · ${v} trips" style="background:${bg}"></div>`;
+      return `<div class="cell" title="${wd} · ${v} ${unit}" style="background:${bg}"></div>`;
     }).join("");
   });
   $(sel).innerHTML = html;
+}
+
+// Stat-card grid (dashboard + station pages). `cards` rows are
+// [label, valueHtml, tooltip?] — labels/values are page-authored template
+// HTML; tooltips may carry feed-derived names and are escaped here.
+function renderCards(sel, cards) {
+  $(sel).innerHTML = cards
+    .map(([k, v, tip]) =>
+      `<div class="card"${tip ? ` data-tip="${esc(tip)}"` : ""}>` +
+      `<div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .join("");
 }
 
 // Default Chart.js options for the full-width history charts.

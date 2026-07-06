@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A data-science project around Hamburg's StadtRad bike-share. Two pieces: **pollers** that snapshot a live API into a partitioned Parquet store, and an **analysis** layer that reconstructs trips from those snapshots and produces stats reports + animated MP4 clips.
+A data-science project around Hamburg's StadtRad bike-share. Three pieces: **pollers** that snapshot a live API into a partitioned Parquet store, an **analysis** layer that reconstructs trips from those snapshots (stats reports, a stockout forecast, animated MP4 clips), and a **web** layer (`web/`) — the FastAPI dashboard + read-only JSON API deployed at rad.haw-hamburg.eu.
 
-There are no tests, no build step, and no linter configured. "Running" means running a poller or an analysis script.
+There are no tests, no build step, and no linter configured. "Running" means running a poller, an analysis script, or the web app.
 
 ## Environment
 
-Python 3.14 in a local `.venv`. Always invoke scripts through it:
+Python 3.14 in a local `.venv` (the web container in `deploy/web/Dockerfile` pins 3.12). Always invoke scripts through it:
 
 ```sh
 source .venv/bin/activate          # or prefix commands with .venv/bin/python
@@ -28,6 +28,9 @@ Credentials for the GBFS poller live in `.env` at the repo root, with **lowercas
 
 # Stats report → analysis/out/stats_report.md + PNGs
 .venv/bin/python analysis/stats.py
+
+# Web dashboard + API (needs requirements-web.txt installed)
+.venv/bin/python -m uvicorn web.app:app --reload --port 8000
 
 # Notebook pipeline (trip inference + interactive maps)
 jupyter notebook analysis/trips.ipynb
@@ -67,9 +70,13 @@ GBFS-specific: `free_bike_status` is snapshotted every cycle into `bikes/date=..
 - It builds two DuckDB tables: `trips` (raw) and `trips_geo` (joined to station coordinates, with haversine `distance_km` and `duration_min`).
 - This is **heuristic and coarse**: endpoints are bounded by the ±5-min poll interval; sub-5-min and return-to-same-station trips are invisible; operator rebalancing (bikes moved by truck) shows up as implausibly fast/long trips — `stats.py` filters these in places, the clip does not.
 
-### `data_root()` and the layout discrepancy
+### `data_root()` and the two possible store locations
 
-The README documents output under `data/gbfs/`, but the **on-disk layout in this repo is `data/` directly** (`data/bikes/`, `data/observations/`, `data/stations.parquet`). `_trips.py:data_root()` probes `data/gbfs/` then `data/` and uses whichever has `bikes/` + `stations.parquet`. Rely on `data_root()` rather than hardcoding either path.
+The GBFS poller's default `--data-dir` is `data/gbfs/`, but the **on-disk layout in this repo is `data/` directly** (`data/bikes/`, `data/observations/`, `data/stations.parquet`). `_trips.py:data_root()` probes `data/gbfs/` then `data/` and uses whichever has `bikes/` + `stations.parquet`; the web layer's `DATA_DIR` env var overrides it. Rely on `data_root()` (or `web.settings.data_dir()`) rather than hardcoding either path.
+
+### Web layer (`web/`)
+
+FastAPI app serving the dashboard (`web/static/`), per-station pages, and a JSON API. `web/db.py` holds one lock-guarded DuckDB connection and materializes small tables (`trips_geo` via `_trips.build_trips`, plus `obs_latest`/`bike_last`/`obs_meta`/`station_hourly`) so requests never scan the Parquet store; background tasks in `web/app.py` refresh them (`LIVE_REFRESH_SEC` / `TRIP_REFRESH_SEC`) and pre-warm the TTL-cached query layer (`web/queries.py`). Deployment: `deploy/web/README.md`.
 
 ### Clip rendering pipeline (`analysis/clip.py` + `analysis/clip/`)
 

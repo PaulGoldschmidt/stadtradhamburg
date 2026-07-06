@@ -43,14 +43,14 @@ async function select(h) {
   for (const s of fc.stations) {
     if (s.lat == null) continue;
     riskMarker(s.lat, s.lon, s.p_empty,
-      `${s.name} — ${Math.round(s.p_empty * 100)}% empty`,
+      `${esc(s.name)} — ${Math.round(s.p_empty * 100)}% empty`,
       () => openStation(s.station_id)).addTo(markerLayer);
   }
 
   $("#risk-list").innerHTML = fc.stations.slice(0, 12).map((s) => `
     <div class="risk-row" data-id="${s.station_id}">
       <span class="risk-badge" style="background:${riskColor(s.p_empty)}">${Math.round(s.p_empty * 100)}%</span>
-      <span class="risk-name">${s.name}</span>
+      <span class="risk-name">${esc(s.name)}</span>
       <span class="risk-sub">${fmt(s.bikes_now)} now → ${Number(s.pred_bikes).toFixed(1)} pred</span>
     </div>`).join("");
   $("#risk-list").querySelectorAll(".risk-row").forEach((r) => (r.onclick = () => {
@@ -65,7 +65,7 @@ function openStation(id) {
   if (!s) return;
   const p = s.p_empty;
   $("#station-body").innerHTML = `
-    <h3>${s.name}</h3>
+    <h3>${esc(s.name)}</h3>
     <span class="risk" style="background:${riskColor(p)}">${Math.round(p * 100)}% chance empty</span>
     <div class="stat-row">
       <div><div class="k">Bikes now</div><div class="v">${fmt(s.bikes_now)}</div></div>

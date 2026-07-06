@@ -6,7 +6,6 @@
 // ---------- live cards ----------
 async function loadCards() {
   const s = await api("/api/stats/today");
-  const hh = (h) => String(h).padStart(2, "0");
   // [label, value, hover-detail?] — row 1 = core counts, row 2 = superlatives w/ hover.
   const cards = [
     ["Trips today", fmt(s.trips)],
@@ -24,15 +23,11 @@ async function loadCards() {
     ["Top bike", fmt(s.top_bike_trips),
       s.top_bike_number ? `Bike ${s.top_bike_number} — ${fmt(s.top_bike_trips)} trips today` : null],
     ["Peak hour", s.peak_hour != null ? `${hh(s.peak_hour)}<small>:00</small>` : "–",
-      s.peak_hour != null ? `${fmt(s.peak_hour_trips)} trips between ${hh(s.peak_hour)}:00 and ${hh(s.peak_hour + 1)}:00` : null],
+      s.peak_hour != null ? `${fmt(s.peak_hour_trips)} trips between ${hh(s.peak_hour)}:00 and ${hh((s.peak_hour + 1) % 24)}:00` : null],
     ["Available now", fmt(s.available_now),
       `${fmt(s.available_now)} bikes free · ${fmt(s.docks_free_now)} open docks · ${fmt(s.stations_online)} stations`],
   ];
-  $("#cards").innerHTML = cards
-    .map(([k, v, tip]) =>
-      `<div class="card"${tip ? ` data-tip="${String(tip).replace(/"/g, "&quot;")}"` : ""}>` +
-      `<div class="k">${k}</div><div class="v">${v}</div></div>`)
-    .join("");
+  renderCards("#cards", cards);
 }
 
 // ---------- map (current status) ----------
@@ -47,7 +42,7 @@ async function loadStations() {
     // count they can actually grab, which also matches the forecast's "empty = 0".
     const emptiness = s.bikes == null ? null : Math.max(0, Math.min(1, (LOW - s.bikes) / LOW));
     riskMarker(s.lat, s.lon, emptiness,
-      `${s.name} — ${s.bikes} bikes / ${s.docks} docks`,
+      `${esc(s.name)} — ${s.bikes} bikes / ${s.docks} docks`,
       () => openStation(s.station_id)).addTo(markerLayer);
   }
 }
@@ -58,7 +53,7 @@ async function openStation(id) {
   const d = await api("/api/station/" + id);
   const occ = d.capacity_now ? d.bikes / d.capacity_now : null;
   $("#station-body").innerHTML = `
-    <h3>${d.name}</h3>
+    <h3>${esc(d.name)}</h3>
     <div class="stat-row">
       <div><div class="k">Bikes now</div><div class="v">${fmt(d.bikes)}</div></div>
       <div><div class="k">Docks free</div><div class="v">${fmt(d.docks)}</div></div>
@@ -141,7 +136,7 @@ async function loadHistory() {
 function renderOD(sel, rows) {
   $(sel).innerHTML = (rows || []).map((r) => `
     <div class="od-row">
-      <span class="od-route">${r.origin} <span class="od-arrow">→</span> ${r.destination}</span>
+      <span class="od-route">${esc(r.origin)} <span class="od-arrow">→</span> ${esc(r.destination)}</span>
       <span class="od-trips">${fmt(r.trips)}<small> ${r.trips === 1 ? "trip" : "trips"}</small></span>
     </div>`).join("");
 }
@@ -149,14 +144,14 @@ function renderOD(sel, rows) {
 function renderNever(sel, rows) {
   $(sel).innerHTML = (rows || []).map((r) => `
     <div class="od-row">
-      <span class="od-route">${r.origin} <span class="od-arrow">→</span> ${r.destination}</span>
+      <span class="od-route">${esc(r.origin)} <span class="od-arrow">→</span> ${esc(r.destination)}</span>
       <span class="od-trips"><small>never ridden</small></span>
     </div>`).join("");
 }
 
 function renderBikes(sel, rows) {
   $(sel).innerHTML = (rows || []).map((r) => {
-    const tip = r.last_station ? ` data-tip="Last seen at ${String(r.last_station).replace(/"/g, "&quot;")}"` : "";
+    const tip = r.last_station ? ` data-tip="${esc(`Last seen at ${r.last_station}`)}"` : "";
     return `
     <div class="od-row"${tip}>
       <span class="od-route">Bike <b>${r.bike_number}</b></span>
@@ -168,7 +163,7 @@ function renderBikes(sel, rows) {
 function renderForgotten(sel, rows) {
   $(sel).innerHTML = (rows || []).map((r) => `
     <div class="od-row">
-      <span class="od-route">Bike <b>${r.bike_number}</b><small> @ ${r.station}</small></span>
+      <span class="od-route">Bike <b>${r.bike_number}</b><small> @ ${esc(r.station)}</small></span>
       <span class="od-trips">${fmt(r.days_idle)}<small> days idle</small></span>
     </div>`).join("");
 }

@@ -41,14 +41,21 @@ def latest_day() -> str:
     return str(df["d"].iloc[0])
 
 
-def _exclude(alias: str = "s") -> tuple[str, list]:
-    """SQL predicate + params to drop statically-excluded stations (depots etc.),
-    e.g. ' AND s.name NOT IN (?)'. Empty when nothing is excluded."""
+def _exclude_names(*cols: str) -> tuple[str, list]:
+    """SQL predicate + params dropping statically-excluded stations (depots etc.)
+    from each given name column, e.g. ' AND origin_name NOT IN (?) AND ...'.
+    Empty when nothing is excluded."""
     names = settings.EXCLUDE_STATIONS
     if not names:
         return "", []
     placeholders = ", ".join(["?"] * len(names))
-    return f" AND {alias}.name NOT IN ({placeholders})", list(names)
+    clause = "".join(f" AND {col} NOT IN ({placeholders})" for col in cols)
+    return clause, list(names) * len(cols)
+
+
+def _exclude(alias: str = "s") -> tuple[str, list]:
+    """_exclude_names for the stations table's `name` column under an alias."""
+    return _exclude_names(f"{alias}.name")
 
 
 # ---------- live ----------------------------------------------------------------
@@ -146,19 +153,14 @@ def stats_today() -> dict:
     ))
     # Longest actual ride today (by straight-line km) + its route. Drop implausible
     # speeds (>30 km/h) so a rebalancing truck-move can't pose as the longest ride.
-    names = settings.EXCLUDE_STATIONS
-    odw, odp = "", []
-    if names:
-        ph = ", ".join(["?"] * len(names))
-        odw = f"AND origin_name NOT IN ({ph}) AND dest_name NOT IN ({ph})"
-        odp = list(names) * 2
+    odw, odp = _exclude_names("origin_name", "dest_name")
     longest = _one(db.query_df(
         f"""
         SELECT round(distance_km, 1) AS longest_km, origin_name, dest_name,
                round(duration_min, 0) AS longest_min
         FROM trips_geo
         WHERE CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE) = DATE '{day}'
-          AND duration_min > 0 AND distance_km / (duration_min / 60.0) <= 30 {odw}
+          AND duration_min > 0 AND distance_km / (duration_min / 60.0) <= 30{odw}
         ORDER BY distance_km DESC LIMIT 1
         """,
         odp,
@@ -317,19 +319,12 @@ def top_stations() -> dict:
     ))
 
     # Origin→destination pairs, with excluded stations (depots) dropped from both ends.
-    names = settings.EXCLUDE_STATIONS
-    if names:
-        ph = ", ".join(["?"] * len(names))
-        od_where = f"WHERE origin_name NOT IN ({ph}) AND dest_name NOT IN ({ph})"
-        od_params = list(names) * 2
-    else:
-        od_where, od_params = "", []
-
+    od_where, od_params = _exclude_names("origin_name", "dest_name")
     od_most = records(db.query_df(
         f"""
         SELECT origin_name AS origin, dest_name AS destination, count(*) AS trips,
                round(avg(distance_km), 2) AS avg_km
-        FROM trips_geo {od_where}
+        FROM trips_geo WHERE TRUE{od_where}
         GROUP BY 1, 2 ORDER BY trips DESC, origin_name, dest_name LIMIT 5
         """,
         od_params,
@@ -337,17 +332,13 @@ def top_stations() -> dict:
 
     # "Be the first one": directed station pairs nobody has ridden yet. Depot and
     # coordinate-less stations excluded from both ends.
-    onx, onp = "", []
-    if names:
-        ph = ", ".join(["?"] * len(names))
-        onx = f"AND o.name NOT IN ({ph}) AND d.name NOT IN ({ph})"
-        onp = list(names) * 2
+    onx, onp = _exclude_names("o.name", "d.name")
     never_sql = f"""
         WITH ridden AS (SELECT DISTINCT origin_id AS o, destination_id AS d FROM trips_geo)
         SELECT o.name AS origin, d.name AS destination
         FROM stations o CROSS JOIN stations d
         WHERE o.station_id <> d.station_id
-          AND o.lat IS NOT NULL AND d.lat IS NOT NULL {onx}
+          AND o.lat IS NOT NULL AND d.lat IS NOT NULL{onx}
           AND NOT EXISTS (SELECT 1 FROM ridden r WHERE r.o = o.station_id AND r.d = d.station_id)
     """
     never = records(db.query_df(
@@ -380,11 +371,7 @@ def bike_usage() -> dict:
     # fleet (seen in the last 2 days, so not removed) but have sat unused the
     # longest — ranked by days since their last ride. Never-moved bikes are
     # excluded, as are bikes sitting in the depot.
-    sx, sp = "", []
-    if settings.EXCLUDE_STATIONS:
-        ph = ", ".join(["?"] * len(settings.EXCLUDE_STATIONS))
-        sx = f"AND st.name NOT IN ({ph})"
-        sp = list(settings.EXCLUDE_STATIONS)
+    sx, sp = _exclude_names("st.name")
     idle = db.query_df(
         f"""
         WITH now AS (SELECT max(last_seen) AS t FROM bike_last),
@@ -476,28 +463,25 @@ def station_detail(station_id: str) -> dict:
 def station_insights(station_id: str) -> dict:
     """Trip-derived stats for one station (feeds the /station/<id> page): when
     people ride here, where they go, and superlatives. Reads only the in-memory
-    `trips_geo` table, so it stays fast without warming."""
+    `trips_geo` table, so it stays fast without warming. Depot endpoints
+    (EXCLUDE_STATIONS) are dropped from every number so the page reconciles."""
     meta = _one(db.query_df(
         "SELECT station_id, name FROM stations WHERE station_id = ?", [station_id]))
     if not meta:
         return {}
 
-    counts = _one(db.query_df(
-        """
-        SELECT (SELECT count(*) FROM trips_geo WHERE origin_id = ?)      AS departures,
-               (SELECT count(*) FROM trips_geo WHERE destination_id = ?) AS arrivals,
-               (SELECT round(avg(duration_min), 1) FROM trips_geo WHERE origin_id = ?) AS avg_min,
-               (SELECT round(avg(distance_km), 2)  FROM trips_geo WHERE origin_id = ?) AS avg_km
-        """,
-        [station_id] * 4,
-    ))
+    dx, dp = _exclude_names("dest_name")    # trips leaving here toward a depot
+    ox, op = _exclude_names("origin_name")  # trips arriving here from a depot
 
-    names = settings.EXCLUDE_STATIONS
-    dx, dp = "", []
-    if names:
-        ph = ", ".join(["?"] * len(names))
-        dx = f" AND dest_name NOT IN ({ph})"
-        dp = list(names)
+    counts = _one(db.query_df(
+        f"""
+        SELECT (SELECT count(*) FROM trips_geo WHERE origin_id = ?{dx})      AS departures,
+               (SELECT count(*) FROM trips_geo WHERE destination_id = ?{ox}) AS arrivals,
+               (SELECT round(avg(duration_min), 1) FROM trips_geo WHERE origin_id = ?{dx}) AS avg_min,
+               (SELECT round(avg(distance_km), 2)  FROM trips_geo WHERE origin_id = ?{dx}) AS avg_km
+        """,
+        [station_id, *dp, station_id, *op, station_id, *dp, station_id, *dp],
+    ))
 
     # Longest actual ride from here — same implausible-speed filter as
     # stats_today, so a rebalancing truck-move can't pose as the longest ride.
@@ -526,11 +510,12 @@ def station_insights(station_id: str) -> dict:
 
     # Weekday × hour grid of moves: departures counted at their departure time,
     # arrivals at their arrival time (each endpoint is ±5 min, see _trips.py).
-    moves_sql = """
-        SELECT departed_after AS t FROM trips_geo WHERE origin_id = ?
+    moves_sql = f"""
+        SELECT departed_after AS t FROM trips_geo WHERE origin_id = ?{dx}
         UNION ALL
-        SELECT arrived_by FROM trips_geo WHERE destination_id = ?
+        SELECT arrived_by FROM trips_geo WHERE destination_id = ?{ox}
     """
+    moves_params = [station_id, *dp, station_id, *op]
     moves = db.query_df(
         f"""
         SELECT (EXTRACT(dow FROM t AT TIME ZONE '{TZ}')::INT + 6) % 7 AS weekday,
@@ -538,7 +523,7 @@ def station_insights(station_id: str) -> dict:
                count(*)                                               AS moves
         FROM ({moves_sql}) GROUP BY 1, 2
         """,
-        [station_id, station_id],
+        moves_params,
     )
     weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     grid = [[0] * 24 for _ in range(7)]
@@ -556,7 +541,7 @@ def station_insights(station_id: str) -> dict:
                count(*) AS busiest_moves
         FROM ({moves_sql}) GROUP BY 1 ORDER BY busiest_moves DESC, busiest_day LIMIT 1
         """,
-        [station_id, station_id],
+        moves_params,
     ))
 
     return {

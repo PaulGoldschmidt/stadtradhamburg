@@ -35,24 +35,30 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_GLO
 STATIC = Path(__file__).resolve().parent / "static"
 
 
-async def _refresher() -> None:
-    """Cheap current-status refresh every LIVE_REFRESH_SEC; full trips rebuild
-    every TRIP_REFRESH_SEC. Each cycle re-warms the affected response caches."""
-    period = settings.LIVE_REFRESH_SEC
-    heavy_every = max(1, round(settings.TRIP_REFRESH_SEC / period))
-    cycle = 0
+async def _live_refresher() -> None:
+    """Cheap cycle: merge the newest partitions into obs_latest, re-warm the
+    live response caches. Independent of the heavy loop so a slow or failing
+    trips rebuild never delays current-status freshness."""
     while True:
-        await asyncio.sleep(period)
-        cycle += 1
+        await asyncio.sleep(settings.LIVE_REFRESH_SEC)
         try:
-            if cycle % heavy_every == 0:
-                await run_in_threadpool(db.refresh_trips)
-                await run_in_threadpool(queries.warm_history)
-            else:
-                await run_in_threadpool(db.refresh_live)
+            await run_in_threadpool(db.refresh_live)
             await run_in_threadpool(queries.warm_live)
         except Exception:
-            log.exception("background refresh failed")
+            log.exception("live refresh failed")
+
+
+async def _trip_refresher() -> None:
+    """Heavy cycle: rebuild trips + history tables, then re-warm both cache
+    tiers (trip-derived numbers feed the live stat cards too)."""
+    while True:
+        await asyncio.sleep(settings.TRIP_REFRESH_SEC)
+        try:
+            await run_in_threadpool(db.refresh_trips)
+            await run_in_threadpool(queries.warm_history)
+            await run_in_threadpool(queries.warm_live)
+        except Exception:
+            log.exception("trip refresh failed")
 
 
 @asynccontextmanager
@@ -63,11 +69,12 @@ async def lifespan(app: FastAPI):
         await run_in_threadpool(queries.warm_live)
     except Exception:
         log.exception("startup cache warm failed")
-    task = asyncio.create_task(_refresher())
+    tasks = [asyncio.create_task(_live_refresher()), asyncio.create_task(_trip_refresher())]
     try:
         yield
     finally:
-        task.cancel()
+        for task in tasks:
+            task.cancel()
 
 
 app = FastAPI(

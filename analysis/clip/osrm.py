@@ -1,6 +1,6 @@
 """Thin client for a self-hosted OSRM routing instance.
 
-Default endpoint matches `deploy/osrm/docker-compose.yml` (`localhost:5000`).
+Default endpoint matches the host port published by `deploy/osrm/docker-compose.yml` (`localhost:5050`).
 Uses polyline6 geometry — six-decimal precision is overkill for visualization
 but cheap to decode.
 """

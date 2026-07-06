@@ -1,4 +1,4 @@
-# Public website (yay)
+# Public website
 
 FastAPI + DuckDB dashboard and read-only JSON API over the Parquet store.
 
