@@ -85,11 +85,11 @@ section { margin: 22px 0; }
   box-shadow: 0 6px 20px rgba(16,24,40,.28);
 }
 
-.card-lg { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+.card-lg { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; min-width: 0; }
 .card-lg h2 { margin: 0 0 12px; font-size: 17px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
-canvas { max-width: 100%; }
+canvas { max-width: 100%; display: block; }
 
 /* map panel */
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
@@ -115,7 +115,7 @@ canvas { max-width: 100%; }
 .station .cap { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 /* heatmap */
-.heatmap { display: grid; grid-template-columns: 34px repeat(24, 1fr); gap: 2px; font-size: 10px; color: var(--muted); }
+.heatmap { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 10px; color: var(--muted); }
 .heatmap .lbl { display: flex; align-items: center; }
 .heatmap .cell { aspect-ratio: 1 / 1; border-radius: 2px; background: var(--line); }
 .heatmap .hr { text-align: center; }
