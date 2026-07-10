@@ -107,12 +107,37 @@ async function loadHistory() {
     options: baseOpts(),
   });
 
+  // Estimated revenue: computed server-side as 30 min free, then 0.10 €/min,
+  // capped at 9 € per trip (see queries.trips_daily).
+  new Chart($("#chart-revenue"), {
+    type: "line",
+    data: {
+      labels: daily.map((d) => d.day),
+      datasets: [{ data: daily.map((d) => d.revenue_eur), borderColor: "#16a34a", backgroundColor: "rgba(22,163,74,.10)", fill: true, tension: 0.3, pointRadius: 0 }],
+    },
+    options: {
+      ...baseOpts(),
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => `≈ ${Number(c.raw).toLocaleString("en-US", { maximumFractionDigits: 0 })} €` } },
+      },
+    },
+  });
+
   const top = await api("/api/history/top_stations");
   new Chart($("#chart-stations"), {
     type: "bar",
     data: {
       labels: top.stations.map((s) => s.name),
       datasets: [{ data: top.stations.map((s) => s.moves), backgroundColor: "#2563eb" }],
+    },
+    options: { ...baseOpts(), indexAxis: "y", scales: { x: { beginAtZero: true }, y: { ticks: { font: { size: 11 } } } } },
+  });
+  new Chart($("#chart-stations-least"), {
+    type: "bar",
+    data: {
+      labels: (top.least || []).map((s) => s.name),
+      datasets: [{ data: (top.least || []).map((s) => s.moves), backgroundColor: "#2563eb" }],
     },
     options: { ...baseOpts(), indexAxis: "y", scales: { x: { beginAtZero: true }, y: { ticks: { font: { size: 11 } } } } },
   });
