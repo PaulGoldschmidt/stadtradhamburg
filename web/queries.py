@@ -274,11 +274,15 @@ def history_summary() -> dict:
 
 @ttl_cache(settings.TTL_HISTORY)
 def trips_daily() -> list[dict]:
+    """Daily trip counts + estimated revenue. Tariff: first 30 min of a trip are
+    free, then 0.10 €/min, capped at 9 € per trip. An estimate on top of an
+    estimate — trip durations are only ±5 min (see _trips.py)."""
     return records(db.query_df(
         f"""
         SELECT CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE)::VARCHAR AS day,
                count(*)                                              AS trips,
-               count(DISTINCT bike_number)                           AS unique_bikes
+               count(DISTINCT bike_number)                           AS unique_bikes,
+               round(sum(least(9.0, greatest(duration_min - 30, 0) * 0.10)), 2) AS revenue_eur
         FROM trips_geo GROUP BY 1 ORDER BY 1
         """
     ))
@@ -318,6 +322,23 @@ def top_stations() -> dict:
         sp,
     ))
 
+    # Least busy: same moves metric, but LEFT JOIN from stations so places with
+    # zero recorded trips show up too (the flow CTE alone would never list them).
+    least = records(db.query_df(
+        f"""
+        WITH flow AS (
+          SELECT origin_id AS sid FROM trips_geo
+          UNION ALL SELECT destination_id FROM trips_geo
+        ),
+        counts AS (SELECT sid, count(*) AS moves FROM flow GROUP BY 1)
+        SELECT s.name, COALESCE(c.moves, 0) AS moves
+        FROM stations s LEFT JOIN counts c ON c.sid = s.station_id
+        WHERE s.lat IS NOT NULL{sx}
+        ORDER BY moves ASC, s.name LIMIT 12
+        """,
+        sp,
+    ))
+
     # Origin→destination pairs, with excluded stations (depots) dropped from both ends.
     od_where, od_params = _exclude_names("origin_name", "dest_name")
     od_most = records(db.query_df(
@@ -346,7 +367,7 @@ def top_stations() -> dict:
     never_count = _one(db.query_df(
         f"SELECT count(*) AS n FROM ({never_sql})", onp)).get("n")
 
-    return {"stations": busiest, "od_most": od_most,
+    return {"stations": busiest, "least": least, "od_most": od_most,
             "od_never": never, "od_never_count": never_count}
 
 
@@ -561,7 +582,8 @@ def download_frame(name: str) -> pd.DataFrame:
             f"""
             SELECT CAST(arrived_by AT TIME ZONE '{TZ}' AS DATE)::VARCHAR AS day,
                    count(*) AS trips, count(DISTINCT bike_number) AS unique_bikes,
-                   round(avg(distance_km), 3) AS avg_km, round(avg(duration_min), 1) AS avg_min
+                   round(avg(distance_km), 3) AS avg_km, round(avg(duration_min), 1) AS avg_min,
+                   round(sum(least(9.0, greatest(duration_min - 30, 0) * 0.10)), 2) AS est_revenue_eur
             FROM trips_geo GROUP BY 1 ORDER BY 1
             """
         )
