@@ -6,14 +6,14 @@ Data root: `data/`
 
 ## Dataset
 
-- Window: **2026-05-29 18:46:51+02:00** → **2026-06-26 14:15:15+02:00** (27.8 days, UTC)
-- 28,745,054 bike snapshots, 2,841,913 station snapshots
-- 4,200 unique bikes seen, 355 stations
-- 187,936 trips reconstructed (gap < 6 h)
+- Window: **2026-05-29 18:46:51+02:00** → **2026-07-03 12:20:02+02:00** (34.7 days, UTC)
+- 35,786,901 bike snapshots, 3,551,142 station snapshots
+- 4,230 unique bikes seen, 356 stations
+- 231,206 trips reconstructed (gap < 6 h)
 
 ## Rentals per day (Europe/Berlin)
 
-Mean **6,481** trips/day  (min 1,578, max 8,288, median 7,074).
+Mean **6,422** trips/day  (min 1,578, max 8,288, median 6,858).
 
        day  trips  unique_bikes weekday
 2026-05-29   1578           910     Fri
@@ -44,47 +44,54 @@ Mean **6,481** trips/day  (min 1,578, max 8,288, median 7,074).
 2026-06-23   8288          2131     Tue
 2026-06-24   7946          2046     Wed
 2026-06-25   7891          2038     Thu
-2026-06-26   3499          1471     Fri
+2026-06-26   7838          1978     Fri
+2026-06-27   5771          1691     Sat
+2026-06-28   4759          1463     Sun
+2026-06-29   6825          1914     Mon
+2026-06-30   5720          1813     Tue
+2026-07-01   7331          2053     Wed
+2026-07-02   6516          1959     Thu
+2026-07-03   2009          1186     Fri
 
 ## Weekday × hour heatmap
 
 Trip counts by weekday (rows) × hour-of-day (cols), local time.
 
-day    0   1   2   3   4   5   6    7    8    9   10   11   12   13   14   15   16   17   18   19   20   21   22   23
-Mon  207 159  71  34  40 139 520 1399 2236 1599 1006 1001 1180 1380 1339 1697 2148 2726 2659 2279 1617 1268  949  594
-Tue  329 160  60  49  54 140 568 1604 2629 1805  935  926 1088 1192 1383 1592 2390 2844 3242 2421 1724 1348 1088  622
-Wed  284 165  61  34  44 144 563 1558 2524 1759 1013  977 1166 1313 1445 1680 2277 2560 2722 2204 1631 1326 1146  780
-Thu  453 250  84  51  69 149 596 1443 2510 1788 1036 1005 1253 1317 1343 1757 2022 2305 2312 2003 1537 1473 1197  829
-Fri  929 453 177  88  71 131 459  985 1416 1294 1051 1054 1404 1471 1261 1228 1084 1248 1393 1950 1351 1151 1383 1281
-Sat 1015 661 403 241 173 117 158  257  551  878 1126 1303 1552 1589 1666 1623 1749 1864 2013 1772 1477 1379 1174  800
-Sun 1060 826 597 325 209 185 129  153  307  684  793  903 1201 1411 1631 1694 1590 1555 1730 1172 1052 1114  743  420
+day    0    1   2   3   4   5   6    7    8    9   10   11   12   13   14   15   16   17   18   19   20   21   22   23
+Mon  307  213  91  52  51 178 661 1731 2558 1781 1139 1182 1443 1672 1668 2094 2653 3410 3421 2916 2116 1691 1290  754
+Tue  469  358 310  74  70 182 710 1999 3227 2199 1161 1118 1381 1522 1770 1973 2928 3242 3404 2547 1796 1475 1252  746
+Wed  361  208  87  42  59 195 726 1977 3171 2239 1267 1198 1491 1644 1886 2147 2685 3233 3223 2707 2074 1696 1442  949
+Thu  559  327 106  56  85 191 701 1779 3147 2285 1325 1237 1590 1634 1563 2106 2276 2737 2918 2506 1935 1785 1457  993
+Fri 1031  530 215 111 101 169 570 1253 1854 1595 1295 1279 1518 1471 1526 1610 1549 1733 1928 2440 1817 1536 1814 1716
+Sat 1295  868 527 307 209 157 187  344  716 1089 1388 1597 1859 1908 1972 1908 2063 2223 2347 2102 1856 1710 1569 1111
+Sun 1331 1067 743 413 223 198 145  184  361  757  839  906 1282 1697 1971 2078 1935 1936 2144 1564 1442 1466  998  563
 
 ## Trip shape (duration, distance, average speed)
 
 - Duration (min):   p50 **18**,  p90 35,  p99 103,  max 360
-- Distance (km):    p50 **1.68**,  p90 4.05,  p99 7.32,  max 21.55
-- Avg speed (km/h): p50 **6.00**,  p90 9.46
+- Distance (km):    p50 **1.67**,  p90 4.04,  p99 7.24,  max 21.55
+- Avg speed (km/h): p50 **5.98**,  p90 9.44
 
 Distance is straight-line origin→destination — actual ridden distance is longer. Speed is therefore a lower bound.
 
 ## Top origin → destination pairs
 
                                           origin                                    destination  trips  avg_km  avg_min
-               Georg-Wilhelm-Straße / Mankiewicz       Neuenfelder Straße / Kurt-Emmerich-Platz    709    0.90    13.10
-                 S Veddel / Wilhelmsburger Platz                           Hovestraße / Aurubis    664    1.11    11.60
-        Neuenfelder Straße / Kurt-Emmerich-Platz              Georg-Wilhelm-Straße / Mankiewicz    635    0.90    12.50
-                            Hovestraße / Aurubis                S Veddel / Wilhelmsburger Platz    585    1.11    12.60
-               U Kellinghusenstraße / Loogeplatz         Tarpenbekstraße / Ernst-Thälmann-Platz    333    0.87    13.80
-          Tarpenbekstraße / Ernst-Thälmann-Platz              U Kellinghusenstraße / Loogeplatz    305    0.87    14.20
-                       Bredowstraße / Pinkertweg                S Tiefstack / Ausschläger Allee    277    1.01    12.80
-                 S Tiefstack / Ausschläger Allee                      Bredowstraße / Pinkertweg    252    1.01    12.30
-                    U Kiwittsmoor / Fibiger Str. Tangstedter Landstraße / Asklepios Klinik Nord    240    0.76    11.70
-  Tangstedter Landstraße / Asklepios Klinik Nord                   U Kiwittsmoor / Fibiger Str.    230    0.76    10.10
-Süderfeldstraße / Universitätsklinikum Eppendorf              U Kellinghusenstraße / Loogeplatz    228    1.31    14.00
-                    Osterstraße / Bismarckstraße                 U Christuskirche / Fruchtallee    228    0.40    11.20
-                  Goebenstraße / Eppendorfer Weg       U Hoheluftbrücke / Kaiser-Friedrich-Ufer    226    0.84    12.10
-        U Hoheluftbrücke / Kaiser-Friedrich-Ufer                 Goebenstraße / Eppendorfer Weg    225    0.84    12.80
-     Friedrich-Ebert-Damm / Charlie-Mills-Straße                     U Trabrennbahn / Traberweg    221    0.82     9.70
+               Georg-Wilhelm-Straße / Mankiewicz       Neuenfelder Straße / Kurt-Emmerich-Platz    902    0.90    12.70
+                 S Veddel / Wilhelmsburger Platz                           Hovestraße / Aurubis    821    1.11    11.50
+        Neuenfelder Straße / Kurt-Emmerich-Platz              Georg-Wilhelm-Straße / Mankiewicz    812    0.90    12.30
+                            Hovestraße / Aurubis                S Veddel / Wilhelmsburger Platz    722    1.11    12.40
+               U Kellinghusenstraße / Loogeplatz         Tarpenbekstraße / Ernst-Thälmann-Platz    405    0.87    13.80
+          Tarpenbekstraße / Ernst-Thälmann-Platz              U Kellinghusenstraße / Loogeplatz    380    0.87    13.60
+                       Bredowstraße / Pinkertweg                S Tiefstack / Ausschläger Allee    356    1.01    12.80
+                 S Tiefstack / Ausschläger Allee                      Bredowstraße / Pinkertweg    330    1.01    12.50
+Süderfeldstraße / Universitätsklinikum Eppendorf              U Kellinghusenstraße / Loogeplatz    296    1.31    13.90
+                  Goebenstraße / Eppendorfer Weg       U Hoheluftbrücke / Kaiser-Friedrich-Ufer    288    0.84    12.00
+     Friedrich-Ebert-Damm / Charlie-Mills-Straße                     U Trabrennbahn / Traberweg    283    0.82     9.80
+        U Hoheluftbrücke / Kaiser-Friedrich-Ufer                 Goebenstraße / Eppendorfer Weg    282    0.84    12.80
+                    U Kiwittsmoor / Fibiger Str. Tangstedter Landstraße / Asklepios Klinik Nord    282    0.76    11.60
+                    Osterstraße / Bismarckstraße                 U Christuskirche / Fruchtallee    280    0.40    10.60
+                      U Trabrennbahn / Traberweg    Friedrich-Ebert-Damm / Charlie-Mills-Straße    273    0.82    12.80
 
 ## Station net flow (arrivals − departures)
 
@@ -92,52 +99,52 @@ Positive = bikes pile up here (sink); negative = bikes drain away (source).
 
 ### Top sinks (net gainers)
 
-                              station  departures  arrivals  net_flow
-  Elsässer Straße / Stormarner Straße         486       534        48
-    Georg-Wilhelm-Straße / Mankiewicz         826       872        46
-Martinistraße / Haupteingang Klinikum        1531      1575        44
-           Elbchaussee / Teufelsbrück         370       413        43
-     U Hudtwalckerstraße / Bebelallee        1279      1320        41
-  Jungfernstieg / Neuer Jungfernstieg        1256      1292        36
- U Ritterstraße / Wandsbeker Chaussee         745       778        33
-       U Eppendorfer Baum / Isestraße        1439      1471        32
-     U Burgstraße / Hammer Landstraße        1167      1199        32
-      S Friedrichsberg / Krausestraße         995      1027        32
+                                         station  departures  arrivals  net_flow
+           Martinistraße / Haupteingang Klinikum        1917      1978        61
+                U Hudtwalckerstraße / Bebelallee        1621      1680        59
+               Georg-Wilhelm-Straße / Mankiewicz        1051      1104        53
+                    Universität / Schlüterstraße        1746      1796        50
+                U Burgstraße / Hammer Landstraße        1401      1449        48
+             Jungfernstieg / Neuer Jungfernstieg        1522      1564        42
+Süderfeldstraße / Universitätsklinikum Eppendorf        1686      1728        42
+               U Hamburger Straße / Wagnerstraße        1550      1588        38
+                 S Friedrichsberg / Krausestraße        1238      1271        33
+                      U Rauhes Haus / Horner Weg         519       549        30
 
 ### Top sources (net losers)
 
                                      station  departures  arrivals  net_flow
-                 Bahnhof Altona / Busbahnhof        1377      1270      -107
-               Luruper Chauseee / Ebertallee         266       207       -59
-           S Klein Flottbek / Ohnhorststraße         212       154       -58
-               Fischersallee / Bleickenallee         327       283       -44
-        Felicitas-Kukuck-Straße / Lille Torv         516       476       -40
-            Bruno-Tesch-Platz / Jessenstraße        1022       985       -37
-            Hauptbahnhof / Heidi-Kabel-Platz        1562      1530       -32
-     Mariannenruhplatz / Eva-Rühmkorf-Straße         477       447       -30
-St. Petersburger Straße / Bei den Kirchhöfen         692       663       -29
-            S Harburg Rathaus / Deichhausweg         301       272       -29
+                 Bahnhof Altona / Busbahnhof        1851      1697      -154
+           S Klein Flottbek / Ohnhorststraße         265       198       -67
+               Luruper Chauseee / Ebertallee         308       243       -65
+        Felicitas-Kukuck-Straße / Lille Torv         652       603       -49
+               Fischersallee / Bleickenallee         449       406       -43
+St. Petersburger Straße / Bei den Kirchhöfen         842       801       -41
+            Bruno-Tesch-Platz / Jessenstraße        1275      1234       -41
+     Mariannenruhplatz / Eva-Rühmkorf-Straße         571       534       -37
+            Hauptbahnhof / Heidi-Kabel-Platz        1909      1873       -36
+               Gertigstraße / Forsmannstraße        1834      1799       -35
 
 ## Outlier trips
 
 
 ### Longest by duration (top 5)
 
-bike_number                          origin_name                               dest_name  duration_min  distance_km        departed_after_utc            arrived_by_utc
-      34906 Gyula-Trebitsch-Platz / Kaskadenpark Universität der Bundeswehr / Rodigallee        359.87         2.19 2026-06-20 13:44:16+02:00 2026-06-20 19:44:08+02:00
-      35485   U Mümmelmannsberg / Kandinskyallee     U Merkenstraße / Möllner Landstraße        359.75         2.16 2026-06-15 02:23:13+02:00 2026-06-15 08:22:58+02:00
-      31023     Hasselbrookstraße / Ritterstraße               Uferstraße / Wagnerstraße        359.72         0.89 2026-06-17 07:12:24+02:00 2026-06-17 13:12:07+02:00
-      30657   Herthastraße / Bramfelder Chaussee        Bramfelder Chaussee / Maisredder        359.70         1.77 2026-05-31 11:53:33+02:00 2026-05-31 17:53:15+02:00
-      32609        U Saarlandstraße / Wiesendamm              Elbchaussee / Teufelsbrück        359.28        12.21 2026-05-30 17:20:02+02:00 2026-05-30 23:19:19+02:00
+bike_number                              origin_name                               dest_name  duration_min  distance_km        departed_after_utc            arrived_by_utc
+      33951               U Rauhes Haus / Horner Weg           U Hammer Kirche / Hammer Park        359.90         0.73 2026-06-26 16:50:10+02:00 2026-06-26 22:50:04+02:00
+      34227               U Rauhes Haus / Horner Weg           U Hammer Kirche / Hammer Park        359.90         0.73 2026-06-26 16:50:10+02:00 2026-06-26 22:50:04+02:00
+      34123               U Rauhes Haus / Horner Weg           U Hammer Kirche / Hammer Park        359.90         0.73 2026-06-26 16:50:10+02:00 2026-06-26 22:50:04+02:00
+      34906     Gyula-Trebitsch-Platz / Kaskadenpark Universität der Bundeswehr / Rodigallee        359.87         2.19 2026-06-20 13:44:16+02:00 2026-06-20 19:44:08+02:00
+      35370 Lohbrügger Markt / Ludwig-Rosenberg-Ring   Billwerder Billdeich / TSG Sportforum        359.83         1.59 2026-07-03 04:06:34+02:00 2026-07-03 10:06:24+02:00
 
 ### Furthest by distance (top 5)
 
 bike_number                              origin_name                    dest_name  distance_km  duration_min  avg_kmh            arrived_by_utc
       32289  Herbert-Wehner-Platz / Großer Schippsee Hugo-Kirchberg-Straße / Tesa        21.55          7.13   181.29 2026-06-05 08:26:05+02:00
-      34125  Bahnhof Bergedorf / Johann-Meyer-Straße  Bahnhof Altona / Busbahnhof        19.25          4.02   287.52 2026-06-08 15:25:22+02:00
       30312  Bahnhof Bergedorf / Johann-Meyer-Straße  Bahnhof Altona / Busbahnhof        19.25          6.58   175.42 2026-06-04 08:35:34+02:00
+      34125  Bahnhof Bergedorf / Johann-Meyer-Straße  Bahnhof Altona / Busbahnhof        19.25          4.02   287.52 2026-06-08 15:25:22+02:00
       31606 Bahnhof Dammtor / Dag-Hammarskjöld-Platz  Soltaustraße / Arnoldistieg        17.58         94.85    11.12 2026-06-23 21:03:07+02:00
-      35235                  S Rissen / Gudrunstraße  Überseering / New-York-Ring        17.40         70.75    14.76 2026-06-22 07:57:55+02:00
+      35170                  S Rissen / Gudrunstraße  Überseering / New-York-Ring        17.40         81.27    12.85 2026-06-23 08:14:34+02:00
 
 _Implausible speeds (>~30 km/h on a long leg) almost certainly mean the bike was moved by truck for rebalancing — not actually ridden. The next table filters those out._
 
@@ -156,78 +163,78 @@ bike_number                              origin_name                            
 ### Most rented (top 10)
 
 bike_number  trips  total_km  avg_km  avg_min
-      30046    137    276.35    2.02    19.90
-      34106    137    260.70    1.90    20.60
-      35294    134    290.49    2.17    22.80
-      34534    132    279.25    2.12    20.20
-      35114    131    255.11    1.95    19.90
-      34541    130    279.31    2.15    21.40
-      32025    128    261.37    2.04    19.90
-      34532    128    310.85    2.43    22.10
-      35320    127    297.00    2.34    23.60
-      30447    125    248.83    1.99    19.50
+      35294    169    353.70    2.09    21.70
+      33031    162    371.95    2.30    24.90
+      34541    159    349.73    2.20    22.70
+      34106    158    302.80    1.92    22.40
+      33018    154    282.90    1.84    20.50
+      35409    153    317.10    2.07    21.20
+      30646    151    291.17    1.93    20.70
+      30046    150    295.00    1.97    20.40
+      35154    149    288.28    1.93    21.50
+      35319    149    373.97    2.51    25.80
 
 ### Most distance covered (top 10, sum of straight-line trip km)
 
 bike_number  total_km  trips  avg_km
-      35319    316.10    124    2.55
-      34532    310.90    128    2.43
-      35320    297.00    127    2.34
-      35294    290.50    134    2.17
-      33031    286.40    124    2.31
-      34541    279.30    130    2.15
-      34534    279.30    132    2.12
-      35474    279.20    125    2.23
-      34788    276.90    115    2.41
-      30046    276.40    137    2.02
+      35319    374.00    149    2.51
+      33031    372.00    162    2.30
+      35294    353.70    169    2.09
+      34541    349.70    159    2.20
+      35391    334.50    138    2.42
+      34532    332.30    137    2.43
+      34904    318.90    148    2.15
+      35409    317.10    153    2.07
+      34788    313.30    128    2.45
+      34850    308.20    133    2.32
 
 ### Largest net displacement (start vs. end position, top 10)
 
 bike_number  net_km                first_seen                 last_seen
-      32012  249.41 2026-06-16 12:46:00+02:00 2026-06-26 14:15:15+02:00
-      32518  245.05 2026-06-16 12:46:00+02:00 2026-06-26 14:15:15+02:00
-      31559   28.49 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
-      31413   26.65 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
-      30145   26.24 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
-      34674   24.84 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
-      31683   24.25 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
-      32970   24.09 2026-05-29 18:46:51+02:00 2026-06-18 20:09:15+02:00
-      35360   24.01 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
-      35285   23.97 2026-05-29 18:46:51+02:00 2026-06-26 14:15:15+02:00
+      32012  249.42 2026-06-16 12:46:00+02:00 2026-07-03 12:20:02+02:00
+      32518  245.05 2026-06-16 12:46:00+02:00 2026-07-03 12:20:02+02:00
+      31559   28.49 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
+      34290   28.34 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
+      32388   26.17 2026-05-30 16:13:03+02:00 2026-07-03 12:20:02+02:00
+      31413   25.50 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
+      35078   25.07 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
+      34674   24.84 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
+      30116   24.22 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
+      34894   23.95 2026-05-29 18:46:51+02:00 2026-07-03 12:20:02+02:00
 
 _Three-digit `net_km` values are operator relocations (likely shipped in from / out to another city or a depot), not user trips._
 
-**94** of 4,172 ever-docked bikes (2.3 %) were only seen at a single station for the whole window.
+**77** of 4,202 ever-docked bikes (1.8 %) were only seen at a single station for the whole window.
 
 ## Chronic occupancy — frustrated users vs. wasted docks
 
 ### Most often empty (no bikes — would-be riders turned away)
 
                                          station  samples  pct_empty  pct_full  capacity
-                                 Elbewerkstätten     8005     100.00      0.00        40
-             Harald-Stender-Platz / FC St. Pauli     8005      63.80      0.00        40
-                   Kurze Mühren / Spitalerstraße     8005      55.20      0.00        40
-              Glindersweg / Bethesda-Krankenhaus     8005      51.60      0.00        40
-                    Ehestorfer Weg / Triftstraße     8005      49.00      0.00        40
-                   Jakobikirchhhof / Steinstraße     8005      42.30      0.00        40
-                      Maretstraße / Baererstraße     8005      41.50      0.00        40
-                   U Steinstraße / Deichtorplatz     8005      39.80      0.00        40
-Eißendorfer Pferdeweg / Asklepios-Klinik Harburg     8005      38.60      0.00        40
-    Kleine Rosenstraße / Gerhart-Hauptmann-Platz     8005      38.50      0.00        40
+                                 Elbewerkstätten     9998     100.00      0.00        40
+             Harald-Stender-Platz / FC St. Pauli     9998      63.20      0.00        40
+                   Kurze Mühren / Spitalerstraße     9998      50.90      0.00        40
+              Glindersweg / Bethesda-Krankenhaus     9998      50.80      0.00        40
+                   Jakobikirchhhof / Steinstraße     9998      46.60      0.00        40
+           Bahnhof Altona Ost / Max-Brauer-Allee     9998      40.70      0.00        40
+                    Ehestorfer Weg / Triftstraße     9998      39.20      0.00        40
+                      Maretstraße / Baererstraße     9998      38.90      0.00        40
+    Kleine Rosenstraße / Gerhart-Hauptmann-Platz     9998      38.50      0.00        40
+Eißendorfer Pferdeweg / Asklepios-Klinik Harburg     9998      37.40      0.00        40
 
 ### Most often full (no docks — would-be returners turned away)
 
                                 station  samples  pct_empty  pct_full  capacity
-            Goldbekplatz / Semperstraße     8005       0.10     69.40        40
-        S Veddel / Wilhelmsburger Platz     8005       2.20     45.50        40
-             Veringstraße / Mannesallee     8005       0.00     44.50        40
-Herbert-Wehner-Platz / Großer Schippsee     8005       0.00     36.40        40
-       U Burgstraße / Hammer Landstraße     8005       0.50     34.30        40
-          Gertigstraße / Forsmannstraße     8005       0.50     32.60        40
-      Georg-Wilhelm-Straße / Mankiewicz     8005       0.10     27.50        40
-               Jarrestraße / Rambatzweg     8005       0.50     26.90        40
-Bahnhof Bergedorf / Johann-Meyer-Straße     8005       0.00     26.00        40
-        Amsinckstraße / Nordkanalbrücke     8005       0.40     22.90        40
+            Goldbekplatz / Semperstraße     9998       0.10     71.50        40
+        S Veddel / Wilhelmsburger Platz     9998       1.80     50.90        40
+             Veringstraße / Mannesallee     9998       0.00     45.60        40
+       U Burgstraße / Hammer Landstraße     9998       0.40     32.80        40
+Herbert-Wehner-Platz / Großer Schippsee     9998       0.00     29.10        40
+               Jarrestraße / Rambatzweg     9998       0.40     26.90        40
+          Gertigstraße / Forsmannstraße     9998       0.90     26.30        40
+        Amsinckstraße / Nordkanalbrücke     9998       0.30     26.10        40
+       U Hudtwalckerstraße / Bebelallee     9998       0.20     26.10        40
+      Georg-Wilhelm-Straße / Mankiewicz     9998       0.20     24.40        40
 
 ---
 
