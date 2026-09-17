@@ -100,6 +100,8 @@ canvas { max-width: 100%; display: block; }
 .dot.g { background: var(--g); } .dot.y { background: var(--y); } .dot.r { background: var(--r); }
 .map-wrap { position: relative; }
 #map { height: 560px; width: 100%; }
+/* Tone the OSM basemap down towards a Positron-like grey so coloured markers read clearly. */
+.basemap-muted { filter: grayscale(1) contrast(0.85) brightness(1.08); }
 @media (max-width: 860px) { #map { height: 420px; } }
 
 /* station side panel */
