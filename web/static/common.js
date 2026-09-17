@@ -28,8 +28,12 @@ function riskColor(r) {
 
 function newMap(id) {
   const m = L.map(id, { scrollWheelZoom: false }).setView([53.55, 10.0], 12);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    attribution: "© OpenStreetMap © CARTO", maxZoom: 19,
+  // Plain OSM raster tiles: keyless and free. CARTO's basemaps started
+  // watermarking tiles with "API KEY REQUIRED" in 2026. The tile pane is
+  // desaturated in style.css so the risk markers still stand out.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19, className: "basemap-muted",
   }).addTo(m);
   return m;
 }
