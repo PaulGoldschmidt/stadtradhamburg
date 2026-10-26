@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import timedelta, timezone
 from pathlib import Path
 
 import duckdb
@@ -37,7 +38,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _trips import LOCAL_TZ, data_root  # noqa: E402
+from _trips import LOCAL_TZ, configure_duckdb, data_root, partition_dates  # noqa: E402
 from weather import (  # noqa: E402
     HAMBURG_LAT, HAMBURG_LON, build_weather_view, weather_path,
     run as fetch_weather,
@@ -58,7 +59,8 @@ def build_panel(
     step_min: int,
     outage_cap_hours: int,
     lookback_hours: int | None = None,
-) -> None:
+    capacity: pd.DataFrame | None = None,
+) -> list[str]:
     """Resample observations onto a regular `step_min` grid per station.
 
     The poller writes only state *changes*, so the raw series is irregular. We
@@ -67,24 +69,59 @@ def build_panel(
     cap are nulled — we don't fill bikes across a multi-hour data gap.
 
     `lookback_hours` bounds the grid to the most recent window (serving only needs
-    the latest slot per station, so a small window keeps memory/CPU flat as history
-    grows). `None` = full history (training). The ASOF fill still reads all obs, so
-    forward-fill into the window start is correct."""
+    the latest slot per station). `None` = full history (training). With a
+    window, `obs_raw` itself is bounded to the `date=` partitions that can
+    still matter: an observation older than `window start - outage cap` can
+    never produce a kept value (it would be nulled as stale), so pruning there
+    changes nothing but keeps memory and I/O flat as history grows.
+
+    `capacity` (station_id, capacity_eff), as persisted in a model bundle, is
+    used as-is for the stations it covers — serving must reproduce the training
+    capacity, and it avoids a full-history quantile. Stations missing from it
+    (added after training) get the quantile over the window; their ids are
+    returned so the caller can log them."""
     obs_glob = data_dir / "observations" / "date=*" / "part-*.parquet"
-    con.execute(f"CREATE OR REPLACE VIEW obs_raw AS SELECT * FROM '{obs_glob}'")
+    if lookback_hours is None:
+        con.execute(f"CREATE OR REPLACE VIEW obs_raw AS SELECT * FROM '{obs_glob}'")
+    else:
+        dates = partition_dates(data_dir, "observations")
+        if not dates:
+            sys.exit(f"no observations found under {obs_glob}")
+        # The newest partition holds the global max (partitions are by event date).
+        t1 = con.execute(
+            f"SELECT max(last_reported) FROM '{obs_glob}' WHERE date = DATE '{dates[-1]}'"
+        ).fetchone()[0]
+        lo = (t1.astimezone(timezone.utc)
+              - timedelta(hours=lookback_hours + outage_cap_hours + 24)).date()
+        con.execute(
+            f"CREATE OR REPLACE VIEW obs_raw AS SELECT * FROM '{obs_glob}' "
+            f"WHERE date >= DATE '{lo.isoformat()}'"
+        )
 
     # Effective capacity per station (the reported `capacity` is a flat 40).
-    con.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE cap AS
+    cap_sql = f"""
         SELECT station_id,
                GREATEST(quantile_cont(num_bikes_available + num_docks_available,
                                        {CAP_QUANTILE}), 1) AS capacity_eff
         FROM obs_raw
-        WHERE is_installed AND num_docks_available IS NOT NULL
+        WHERE is_installed AND num_docks_available IS NOT NULL{{extra}}
         GROUP BY 1
-        """
-    )
+    """
+    fallback: list[str] = []
+    if capacity is None:
+        con.execute("CREATE OR REPLACE TEMP TABLE cap AS " + cap_sql.format(extra=""))
+    else:
+        con.register("cap_bundle", capacity[["station_id", "capacity_eff"]])
+        con.execute(
+            "CREATE OR REPLACE TEMP TABLE cap AS "
+            "SELECT station_id, capacity_eff FROM cap_bundle UNION ALL "
+            + cap_sql.format(extra=" AND station_id NOT IN (SELECT station_id FROM cap_bundle)")
+        )
+        fallback = [r[0] for r in con.execute(
+            "SELECT station_id FROM cap WHERE station_id NOT IN "
+            "(SELECT station_id FROM cap_bundle) ORDER BY 1"
+        ).fetchall()]
+        con.unregister("cap_bundle")
 
     # Regular time grid, snapped to the step. generate_series is inclusive.
     start_expr = "(SELECT t0 FROM bounds)"
@@ -139,6 +176,7 @@ def build_panel(
         WHERE COALESCE(is_installed, FALSE)
         """
     )
+    return fallback
 
 
 def build_feature_frame(
@@ -306,25 +344,40 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
     recent data, using FORECAST weather for the target hours. Writes a
     LONG-format forecast_live.parquet — one row per (station, horizon).
 
-    Only the latest slot per station is used, so the panel is bounded to the last
-    `lookback_hours` — bounding memory/CPU regardless of how much history exists.
-    `quiet` suppresses the step-by-step + risk-table output (for the 5-min loop),
-    emitting just a one-line completion summary."""
+    Only the latest slot per station is used, so the panel — and the
+    observations read for it — are bounded to the last `lookback_hours`, keeping
+    memory and I/O flat regardless of how much history exists. Stations silent
+    for longer than the window (minus the outage cap) get no forecast. Model
+    bundles are loaded one at a time and released; DuckDB is bounded to a small
+    buffer pool. `quiet` suppresses the step-by-step + risk-table output (for the
+    5-min loop), emitting just a one-line completion summary."""
     log = (lambda *a, **k: None) if quiet else print
     horizons = sorted(set(horizons))
-    bundles = {h: load_bundle(default_model_path(h)) for h in horizons}  # fail early if missing
-    base_cfg = bundles[horizons[0]]["config"]
+    paths = {h: default_model_path(h) for h in horizons}
+    missing = [str(p) for p in paths.values() if not p.exists()]
+    if missing:
+        sys.exit("model bundle(s) not found:\n  " + "\n  ".join(missing)
+                 + "\nTrain them first with --save-model --horizon-min H.")
+    # All bundles are trained alike (same grid/outage/weather config); the first
+    # one supplies the shared config and the per-station capacity table.
+    bundle = load_bundle(paths[horizons[0]])
+    base_cfg = bundle["config"]
     step_min, outage = base_cfg["step_min"], base_cfg["outage_cap_hours"]
-    use_weather = any(b["config"]["use_weather"] for b in bundles.values())
-    log(f"loaded {len(bundles)} bundle(s) for horizons {horizons} min")
+    use_weather = bool(base_cfg["use_weather"])
+    log(f"bundles for horizons {horizons} min; config from h{horizons[0]}")
 
     con = duckdb.connect()
+    configure_duckdb(con, memory_limit="128MB", threads=1)
     con.execute(
         f"CREATE OR REPLACE VIEW stations AS SELECT * FROM '{data_dir / 'stations.parquet'}'"
     )
 
     log(f"building panel from current data (last {lookback_hours}h)…")
-    build_panel(con, data_dir, step_min, outage, lookback_hours=lookback_hours)
+    fallback = build_panel(con, data_dir, step_min, outage,
+                           lookback_hours=lookback_hours, capacity=bundle.get("capacity"))
+    if fallback:
+        print(f"capacity for {len(fallback)} station(s) not in the model bundle, "
+              f"estimated from the window: {', '.join(fallback)}")
     now_ts = pd.Timestamp(con.execute("SELECT max(t) FROM panel").fetchone()[0])
     max_target = now_ts + pd.Timedelta(minutes=max(horizons))
     log(f"latest slot {now_ts}; forecasting up to {max_target}")
@@ -354,7 +407,8 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
 
     frames = []
     for h in horizons:
-        bundle = bundles[h]
+        if h != horizons[0]:
+            bundle = load_bundle(paths[h])  # one bundle in memory at a time
         df = build_feature_frame(con, bundle["config"]["horizon_steps"], step_min, use_w)
         # Most recent slot per station with a known current level.
         live = (df.dropna(subset=["bikes"])
@@ -376,6 +430,7 @@ def predict_live(data_dir: Path, horizons: list[int], top_n: int,
             .rename(columns={"bikes": "bikes_now"})
         )
         log(f"  +{h:>3} min: {len(live)} stations, mean P(empty)={live['p_empty'].mean():.3f}")
+        del bundle, df, live, X
 
     result = pd.concat(frames, ignore_index=True)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -488,8 +543,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--top-n", type=int, default=20, help="Rows in the --predict risk table.")
     p.add_argument("--no-map", action="store_true", help="Skip the HTML map in --predict.")
     p.add_argument("--lookback-hours", type=int, default=48,
-                   help="--predict: bound the panel to the last N hours (default 48). "
-                        "Keeps serving memory/CPU flat as history grows.")
+                   help="--predict: bound the panel and the observations read to the last "
+                        "N hours (default 48). Keeps serving memory/CPU flat as history "
+                        "grows; stations silent for longer get no forecast.")
     p.add_argument("--quiet", action="store_true",
                    help="--predict: suppress step/table output, print only a completion line "
                         "(for the 5-min loop, to avoid log spam).")
@@ -511,6 +567,7 @@ def main(argv: list[str] | None = None) -> int:
         print("note: no weather store found — run analysis/weather.py first. Continuing without it.")
 
     con = duckdb.connect()
+    configure_duckdb(con)  # honours DUCKDB_* env vars; unbounded by default (training needs the history)
     if use_weather:
         build_weather_view(con, weather_path(data_dir))
 

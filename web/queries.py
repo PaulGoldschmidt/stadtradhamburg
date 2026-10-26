@@ -1,11 +1,14 @@
 """All SQL lives here. Each public function is TTL-cached and returns
 JSON-native structures (via `records()`), so route handlers stay trivial.
 
-Everything reads the small tables materialized in db.py (`trips_geo`,
-`obs_latest`, `bike_last`, …) rather than the Parquet-backed views — a full view
-scan costs seconds, the tables ~milliseconds. Only `station_detail`'s timeline
-touches raw observations, partition-pruned to the last few days. SQL mirrors
-analysis/stats.py so the site and the offline reports agree on definitions.
+Everything reads the derived views from db.py (`trips_geo`, `obs_latest`,
+`bike_last`, `station_hourly`, `obs_meta`), which are small Parquet files kept
+current by scripts/derive.py — never the raw streams, whose full scan costs
+seconds and gigabytes. Only `station_detail`'s timeline and the occupancy
+download touch raw observations, partition-pruned. The TTL caches bound how
+often the derived files are re-read; a cold cache pays a scan of a few MB. SQL
+mirrors analysis/stats.py so the site and the offline reports agree on
+definitions.
 """
 
 from __future__ import annotations
@@ -483,9 +486,9 @@ def station_detail(station_id: str) -> dict:
 @ttl_cache(settings.TTL_STATION)
 def station_insights(station_id: str) -> dict:
     """Trip-derived stats for one station (feeds the /station/<id> page): when
-    people ride here, where they go, and superlatives. Reads only the in-memory
-    `trips_geo` table, so it stays fast without warming. Depot endpoints
-    (EXCLUDE_STATIONS) are dropped from every number so the page reconciles."""
+    people ride here, where they go, and superlatives. Reads only the derived
+    `trips_geo` view. Depot endpoints (EXCLUDE_STATIONS) are dropped from every
+    number so the page reconciles."""
     meta = _one(db.query_df(
         "SELECT station_id, name FROM stations WHERE station_id = ?", [station_id]))
     if not meta:
@@ -608,32 +611,3 @@ def download_frame(name: str) -> pd.DataFrame:
 
 
 DOWNLOADS = ("trips_daily", "station_occupancy_daily", "stations")
-
-
-# ---------- cache warming --------------------------------------------------------
-# Called by the app's background refresher right after the underlying tables are
-# rebuilt: drop the stale entries, then recompute, so requests always hit memory
-# and never see pre-refresh data. (station_detail/forecast_at are per-key and
-# cheap now — they stay plain TTL.)
-
-_LIVE_FNS = (latest_day, health, _forecast_columns, forecast_horizons,
-             stats_today, stations_live)
-_HISTORY_FNS = (history_summary, trips_daily, heatmap, top_stations,
-                bike_usage, weather_ridership)
-
-
-def _rewarm(fns) -> None:
-    for fn in fns:
-        fn.cache_clear()
-    for fn in fns:
-        fn()
-
-
-def warm_live() -> None:
-    """Recompute the live-TTL caches (after each obs_latest refresh)."""
-    _rewarm(_LIVE_FNS)
-
-
-def warm_history() -> None:
-    """Recompute the trip-derived caches (after each full trips rebuild)."""
-    _rewarm(_HISTORY_FNS)

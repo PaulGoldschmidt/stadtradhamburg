@@ -29,8 +29,13 @@ Credentials for the GBFS poller live in `.env` at the repo root, with **lowercas
 # Stats report → analysis/out/stats_report.md + PNGs
 .venv/bin/python analysis/stats.py
 
+# Derived store for the web (trips, state); rerun to fold in new poller output
+.venv/bin/python scripts/derive.py
+.venv/bin/python scripts/check_derived.py             # derived/ == full rebuild?
+
 # Web dashboard + API (needs requirements-web.txt installed)
 .venv/bin/python -m uvicorn web.app:app --reload --port 8000
+.venv/bin/python scripts/smoke_web.py                 # every endpoint, cold+warm, RSS
 
 # Notebook pipeline (trip inference + interactive maps)
 jupyter notebook analysis/trips.ipynb
@@ -57,17 +62,23 @@ Both pollers are independent files (no shared module) but follow the identical p
 - **Cursor-based dedup via `state.json`**: per-stream last-seen timestamp; only strictly-newer observations get written.
 - **First run seeds cursors only** — it intentionally writes zero observations, so the dataset begins at the moment polling started. Don't "fix" this.
 - **Atomic writes everywhere**: write to `*.tmp`, then `os.replace`. State and every Parquet part use this.
-- **Partitioned Parquet output**: `observations/date=YYYY-MM-DD/part-<UTC-stamp>.parquet`, zstd-compressed, one file per cycle. Metadata (`stations.parquet` / `datastreams.parquet`) refreshes daily.
+- **Partitioned Parquet output**: `observations/date=YYYY-MM-DD/part-<UTC-stamp>.parquet`, zstd-compressed, one file per cycle. Metadata (`stations.parquet` / `datastreams.parquet`) refreshes daily. Every row carries `ingested_at` (the write time, identical for a whole cycle); the deriver uses it as its watermark, so keep it.
 - Daemon loop catches all exceptions per-cycle (never dies on a bad poll), sleeps in 1-second slices for prompt SIGTERM shutdown.
 
 GBFS-specific: `free_bike_status` is snapshotted every cycle into `bikes/date=.../part-*.parquet`, keyed by stable `_bike_number` (the number on the frame). **A bike being ridden is absent from the snapshot** — that absence is the entire basis of trip inference. GBFS has no historical backlog, so a missed cycle is data permanently lost; run it as a service (`deploy/gbfs-poller.service`).
 
 ### Trip reconstruction — `analysis/_trips.py` is the single source of truth
 
-`stats.py` and the entire `clip/` pipeline import `build_views` + `build_trips` from here so they share one definition of "what a trip is." Change trip semantics **only** in this file.
+`stats.py`, the entire `clip/` pipeline, the deriver and the web import from here so they share one definition of "what a trip is." Change trip semantics **only** in this file (`TRIP_WHERE`, `trips_select()`, `TRIP_CAP`).
 
-- A trip = a bike whose previously-seen station differs from its currently-seen station (`LAG` over `bikes` partitioned by `bike_number`), with a gap shorter than `TRIP_CAP` (6 h — longer gaps are treated as the bike being offline, not one ride).
-- It builds two DuckDB tables: `trips` (raw) and `trips_geo` (joined to station coordinates, with haversine `distance_km` and `duration_min`).
+- A trip = a bike whose previously-seen *docked* station differs from its currently-seen station (`LAG` over `bikes` partitioned by `bike_number`, sightings without a station ignored), with a gap shorter than `TRIP_CAP` (6 h — longer gaps are treated as the bike being offline, not one ride).
+- `build_trips()` is the full offline rebuild (two DuckDB tables, `trips` and `trips_geo` joined to station coordinates with haversine `distance_km` and `duration_min`). It sorts the whole history and needs gigabytes; it is for `stats.py`, the clip and `scripts/check_derived.py`, never for the server.
+- `scripts/derive.py` produces the same trips **incrementally** (see "Derived store") from the same `trips_select()`; `check_derived.py` proves both agree on a local store.
+- Shared helpers: `partition_dates()` (cheap `date=` listing), `configure_duckdb()` (memory/thread bounds from `DUCKDB_*` env vars), `build_views()`.
+
+### Derived store — `scripts/derive.py` + `analysis/derived.py`
+
+Production never scans the raw streams for the site. A one-shot deriver (run every minute by the `deriver` container, `deploy/derive-loop.sh`) folds the rows the poller wrote since its last pass — selected by `date=` partition and `ingested_at` watermark, one day at a time — into small Parquet files under `derived/`: trips by UTC arrival day, `bike_state`, `obs_latest`, `obs_meta`, `stations_seen`, per-day `station_hourly` sums, plus `meta.json`. All writes are atomic and idempotent; the first pass bootstraps the whole history day by day. Layout and the web's views over it live in `analysis/derived.py`. Design rule for everything here: **minimal RAM on the host first** — disk writes and slower cold requests are acceptable, in-memory materialisation of history is not.
 - This is **heuristic and coarse**: endpoints are bounded by the ±5-min poll interval; sub-5-min and return-to-same-station trips are invisible; operator rebalancing (bikes moved by truck) shows up as implausibly fast/long trips — `stats.py` filters these in places, the clip does not.
 
 ### `data_root()` and the two possible store locations
@@ -76,7 +87,7 @@ The GBFS poller's default `--data-dir` is `data/gbfs/`, but the **on-disk layout
 
 ### Web layer (`web/`)
 
-FastAPI app serving the dashboard (`web/static/`), per-station pages, and a JSON API. `web/db.py` holds one lock-guarded DuckDB connection and materializes small tables (`trips_geo` via `_trips.build_trips`, plus `obs_latest`/`bike_last`/`obs_meta`/`station_hourly`) so requests never scan the Parquet store; background tasks in `web/app.py` refresh them (`LIVE_REFRESH_SEC` / `TRIP_REFRESH_SEC`) and pre-warm the TTL-cached query layer (`web/queries.py`). Deployment: `deploy/web/README.md`.
+FastAPI app serving the dashboard (`web/static/`), per-station pages, and a JSON API. It is a stateless reader: `web/db.py` holds one lock-guarded, memory-bounded DuckDB connection with views over the raw store and over `derived/` (`trips`/`trips_geo`, `obs_latest`, `bike_last`, `obs_meta`, `station_hourly`); nothing is materialized or rebuilt in the process. A background task in `web/app.py` re-creates the views every `LIVE_REFRESH_SEC` so newly appeared files are served; `web/queries.py` is TTL-cached and a cold request pays a small scan of the derived files. Deployment and the memory/latency budget: `deploy/web/README.md`.
 
 ### Clip rendering pipeline (`analysis/clip.py` + `analysis/clip/`)
 

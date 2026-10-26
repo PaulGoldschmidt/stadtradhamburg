@@ -12,13 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
 COPY requirements-web.txt requirements-forecast.txt ./
 RUN pip install --no-cache-dir -r requirements-web.txt -r requirements-forecast.txt
 
-# App + the reused analysis modules + the GBFS poller + the forecast loop — all
-# three services (web, poller, forecast) run off this one image, different commands.
+# App + the reused analysis modules + the GBFS poller + the deriver and forecast
+# loops — all four services (web, poller, deriver, forecast) run off this one
+# image, different commands.
 # Data and the forecast report are bind-mounted at runtime, not baked in.
 COPY web/ web/
-COPY analysis/_trips.py analysis/weather.py analysis/forecast.py analysis/
-COPY scripts/gbfs_poller.py scripts/gbfs_poller.py
-COPY deploy/forecast-loop.sh deploy/forecast-loop.sh
+COPY analysis/_trips.py analysis/derived.py analysis/weather.py analysis/forecast.py analysis/
+COPY scripts/gbfs_poller.py scripts/derive.py scripts/
+COPY deploy/forecast-loop.sh deploy/derive-loop.sh deploy/
 
 RUN useradd --create-home app && chown -R app /app
 USER app

@@ -31,9 +31,20 @@ def data_dir() -> Path:
     return data_root()
 
 
-# DuckDB CPU bound + cache lifetimes (seconds).
-DUCKDB_THREADS = _int("DUCKDB_THREADS", 2)
-TRIP_REFRESH_SEC = _int("TRIP_REFRESH_SEC", 300)
+def derived_dir() -> Path:
+    """Derived store written by scripts/derive.py. DERIVED_DIR overrides <repo>/derived."""
+    override = os.environ.get("DERIVED_DIR")
+    return Path(override) if override else REPO / "derived"
+
+
+# DuckDB bounds: the web only ever scans small derived files, so one thread and
+# a small buffer pool are enough; anything bigger spills to DUCKDB_TEMP_DIR.
+DUCKDB_THREADS = _int("DUCKDB_THREADS", 1)
+DUCKDB_MEMORY_LIMIT = os.environ.get("DUCKDB_MEMORY_LIMIT", "256MB")
+DUCKDB_TEMP_DIR = os.environ.get("DUCKDB_TEMP_DIR", str(REPO / ".duckdb-tmp"))
+
+# How often the views are re-created to pick up new derived/forecast/weather
+# files, and the response-cache lifetimes (seconds).
 LIVE_REFRESH_SEC = _int("LIVE_REFRESH_SEC", 60)
 TTL_LIVE = _int("TTL_LIVE", 60)
 TTL_HISTORY = _int("TTL_HISTORY", 3600)

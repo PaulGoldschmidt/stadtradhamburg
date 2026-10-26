@@ -189,3 +189,6 @@ analysis/out/forecast_live.parquet
 analysis/out/forecast_live.md
 analysis/out/site/
 /data/osrm/
+/derived
+/.duckdb-tmp
+/analysis

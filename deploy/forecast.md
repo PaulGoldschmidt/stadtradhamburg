@@ -56,7 +56,9 @@ object storage after each refresh.
 
 ## Scaling note
 
-`--predict` currently rebuilds the panel over **all** history each run (a few
-seconds on ~1 month of data). Since `observations/` is partitioned by `date=`,
-a long-running deployment should bound the serving read to the last day or two of
-partitions — the model only needs ~1 h of lookback for its features.
+`--predict` reads only the `date=` partitions that can matter for the last
+`--lookback-hours` (default 48; the container uses 24) plus the outage cap,
+takes the per-station capacity from the model bundle instead of a full-history
+quantile, and loads one bundle at a time, so a run stays at a few seconds and a
+few hundred MB however long the store grows. Stations silent for longer than
+the window get no forecast.

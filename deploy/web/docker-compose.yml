@@ -1,4 +1,10 @@
 services:
+  # Four services off one image, different commands. Memory rule for this file:
+  # memswap_limit always equals mem_limit (no swap allowance), so a container
+  # that outgrows its limit is killed and restarted instead of thrashing the
+  # host's swap and NVMe. Limits are deliberately small: the stack is designed
+  # for a minimal RAM footprint (derived data lives in small Parquet files on
+  # disk, heavy work runs in short-lived processes), not for minimal latency.
   web:
     build:
       context: ../..                 # repo root
@@ -8,17 +14,24 @@ services:
     ports:
       - "127.0.0.1:9507:8000"
     volumes:
-      # The poller's Parquet store + the forecast artifact, read-only.
+      # The poller's Parquet store, the forecast artifact and the derived store,
+      # all read-only: the web process never writes anything but DuckDB spill.
       - ../../data:/app/data:ro
       - ../../analysis/out:/app/analysis/out:ro
+      - ../../derived:/app/derived:ro
+      - web-duckdb-tmp:/tmp/duckdb   # spill space; nothing persistent
     environment:
       DATA_DIR: /app/data
-      DUCKDB_THREADS: "2"            # bound CPU per query
-      TRIP_REFRESH_SEC: "300"
+      DERIVED_DIR: /app/derived
+      DUCKDB_THREADS: "1"
+      DUCKDB_MEMORY_LIMIT: 128MB     # buffer pool; queries only touch small derived files
+      DUCKDB_TEMP_DIR: /tmp/duckdb
+      LIVE_REFRESH_SEC: "60"         # how often views are re-created to pick up new files
       # CORS_ORIGINS: "https://your.domain"
     restart: unless-stopped
     cpus: 1.0
-    mem_limit: 512m
+    mem_limit: 384m                  # Python + pandas + DuckDB baseline is ~150-200 MB
+    memswap_limit: 384m
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
@@ -45,12 +58,40 @@ services:
     restart: unless-stopped
     cpus: 0.5
     mem_limit: 256m
+    memswap_limit: 256m
     stop_grace_period: 60s           # poller drains its current cycle on SIGTERM
+
+  # Derivation: every DERIVE_INTERVAL seconds a short-lived pass folds what the
+  # poller wrote since the last pass into derived/ (trips by arrival day, bike
+  # state, latest station status, hourly sums) — the files the web serves from.
+  # The first pass on an empty derived/ bootstraps the whole history one day at
+  # a time. Owns derived/ (read-write); reads data/ read-only.
+  deriver:
+    image: stadtrad-web
+    container_name: stadtrad-deriver
+    depends_on:
+      - web
+    command: ["bash", "deploy/derive-loop.sh"]
+    volumes:
+      - ../../data:/app/data:ro
+      - ../../derived:/app/derived   # read-write: the deriver owns this store
+    environment:
+      DATA_DIR: /app/data
+      DERIVED_DIR: /app/derived
+      DERIVE_INTERVAL: "60"          # an idle pass costs a directory listing
+      DUCKDB_THREADS: "1"
+      DUCKDB_MEMORY_LIMIT: 64MB      # one partition day at a time; spills to derived/tmp
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m                  # bootstrap day peaks ~350 MB RSS; a steady-state pass ~65 MB
+    memswap_limit: 512m
+    stop_grace_period: 30s
 
   # Forecast: every 5 min, regenerate analysis/out/forecast_live.parquet (the
   # report the web app's /forecast page reads) from the latest data. Reuses the
   # web image. Loads the per-horizon model bundles (forecast_model_h*.joblib),
-  # which are gitignored — transfer them into analysis/out/ once.
+  # which are gitignored — transfer them into analysis/out/ once. Each run is a
+  # short-lived process bounded to the last LOOKBACK_HOURS of observations.
   forecast:
     image: stadtrad-web              # same image (has lightgbm/scikit-learn baked in)
     container_name: stadtrad-forecast
@@ -64,8 +105,14 @@ services:
       DATA_DIR: /app/data
       FORECAST_INTERVAL: "300"       # seconds between forecast regenerations
       HORIZONS: "30 60 90 120"       # a model bundle must exist for each
-      DUCKDB_THREADS: "2"
+      LOOKBACK_HOURS: "24"           # serving panel window; stations silent longer than this get no forecast
+      DUCKDB_THREADS: "1"
+      DUCKDB_MEMORY_LIMIT: 128MB
     restart: unless-stopped
     cpus: 1.0
-    mem_limit: 1g                    # panel build + 4 LightGBM models
+    mem_limit: 640m                  # import baseline ~220 MB; a predict run peaked at 470 MB RSS (48 h lookback, laptop)
+    memswap_limit: 640m
     stop_grace_period: 20s
+
+volumes:
+  web-duckdb-tmp:

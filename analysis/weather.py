@@ -39,7 +39,7 @@ from urllib3.util.retry import Retry
 
 # Stay importable both as `python analysis/weather.py` and `python -m analysis.weather`.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _trips import data_root  # noqa: E402
+from _trips import configure_duckdb, data_root, partition_dates  # noqa: E402
 
 LOG = logging.getLogger("weather")
 
@@ -136,13 +136,22 @@ def floor_hour(t: datetime) -> datetime:
 
 
 def detect_window(data_dir: Path) -> tuple[datetime, datetime]:
-    """Min/max observation time across the bike data, as UTC hour bounds."""
-    con = duckdb.connect()
+    """Min/max observation time across the bike data, as UTC hour bounds.
+    Reads only the first and the last `date=` partition (partitions are by
+    event date), not the whole store."""
     glob = data_dir / "observations" / "date=*" / "part-*.parquet"
-    lo, hi = con.execute(
-        f"SELECT min(last_reported), max(last_reported) FROM '{glob}'"
-    ).fetchone()
-    if lo is None:
+    dates = partition_dates(data_dir, "observations")
+    if not dates:
+        sys.exit(f"no observations found under {glob}")
+    con = duckdb.connect()
+    configure_duckdb(con, memory_limit="128MB", threads=1)
+    lo = con.execute(
+        f"SELECT min(last_reported) FROM '{glob}' WHERE date = DATE '{dates[0]}'"
+    ).fetchone()[0]
+    hi = con.execute(
+        f"SELECT max(last_reported) FROM '{glob}' WHERE date = DATE '{dates[-1]}'"
+    ).fetchone()[0]
+    if lo is None or hi is None:
         sys.exit(f"no observations found under {glob}")
     return floor_hour(lo), floor_hour(hi) + timedelta(hours=1)
 

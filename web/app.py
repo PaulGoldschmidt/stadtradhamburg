@@ -1,12 +1,13 @@
 """FastAPI app: curated JSON API + static single-page dashboard.
 
-Startup warms the DuckDB connection, materialized tables, and response caches; a
-background task then refreshes the current-status table every LIVE_REFRESH_SEC
-and does the full trips rebuild every TRIP_REFRESH_SEC, re-warming the response
-caches after each — so requests are always served from memory and never pay a
-Parquet scan. All query work runs in a threadpool (the DuckDB access itself is
-lock-serialized) and is TTL-cached. Per-IP rate limits via slowapi. See
-deploy/web/ for the container CPU/memory limits.
+The process is a thin reader: startup opens the DuckDB connection and creates
+views over the Parquet store and the derived store (see db.py); a background
+task re-creates those views every LIVE_REFRESH_SEC so newly appeared files are
+picked up. Nothing is materialized or pre-warmed — the first request after a
+cache expiry pays the (small) query, by design: the containers are sized for
+minimal memory, not minimal latency. All query work runs in a threadpool (the
+DuckDB access itself is lock-serialized) and is TTL-cached. Per-IP rate limits
+via slowapi. See deploy/web/ for the container CPU/memory limits.
 """
 
 from __future__ import annotations
@@ -35,46 +36,25 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_GLO
 STATIC = Path(__file__).resolve().parent / "static"
 
 
-async def _live_refresher() -> None:
-    """Cheap cycle: merge the newest partitions into obs_latest, re-warm the
-    live response caches. Independent of the heavy loop so a slow or failing
-    trips rebuild never delays current-status freshness."""
+async def _view_refresher() -> None:
+    """Re-create the file-backed views so files that appeared since (first
+    deriver bootstrap, new forecast, new weather) are served. Cheap: no scan."""
     while True:
         await asyncio.sleep(settings.LIVE_REFRESH_SEC)
         try:
-            await run_in_threadpool(db.refresh_live)
-            await run_in_threadpool(queries.warm_live)
+            await run_in_threadpool(db.refresh_views)
         except Exception:
-            log.exception("live refresh failed")
-
-
-async def _trip_refresher() -> None:
-    """Heavy cycle: rebuild trips + history tables, then re-warm both cache
-    tiers (trip-derived numbers feed the live stat cards too)."""
-    while True:
-        await asyncio.sleep(settings.TRIP_REFRESH_SEC)
-        try:
-            await run_in_threadpool(db.refresh_trips)
-            await run_in_threadpool(queries.warm_history)
-            await run_in_threadpool(queries.warm_live)
-        except Exception:
-            log.exception("trip refresh failed")
+            log.exception("view refresh failed")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_in_threadpool(db.init)
-    try:
-        await run_in_threadpool(queries.warm_history)
-        await run_in_threadpool(queries.warm_live)
-    except Exception:
-        log.exception("startup cache warm failed")
-    tasks = [asyncio.create_task(_live_refresher()), asyncio.create_task(_trip_refresher())]
+    task = asyncio.create_task(_view_refresher())
     try:
         yield
     finally:
-        for task in tasks:
-            task.cancel()
+        task.cancel()
 
 
 app = FastAPI(
