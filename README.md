@@ -9,6 +9,14 @@ A small project for the course *Urbane Mobilität und Elektromobilität*
 (HAW Hamburg). This code is shipped as-is, without any guarantees
 ([MIT license](LICENSE)).
 
+<a href="https://loc-history.com/?repos=PaulGoldschmidt/stadtradhamburg&style=sketch">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://loc-history.com/svg?repos=PaulGoldschmidt/stadtradhamburg&style=sketch&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://loc-history.com/svg?repos=PaulGoldschmidt/stadtradhamburg&style=sketch&theme=light">
+    <img alt="Lines of code in this repository over time" src="https://loc-history.com/svg?repos=PaulGoldschmidt/stadtradhamburg&style=sketch&theme=light">
+  </picture>
+</a>
+
 ## How it works
 
 - `scripts/gbfs_poller.py` snapshots Deutsche Bahn's Shared-Mobility GBFS API
